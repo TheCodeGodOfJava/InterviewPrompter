@@ -1,8 +1,12 @@
 package com.example.demo.controller;
 
 import com.example.demo.service.SpeechRecognitionService;
-import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
+@Slf4j
 @RestController
 @RequestMapping("/speech")
 public class SpeechRecognitionController {
@@ -16,11 +20,11 @@ public class SpeechRecognitionController {
     @PostMapping("/start")
     public String start() {
         try {
-            service.init();
+            service.initRecognition();
             service.startRecognition();
             return "Speech recognition started (Ukrainian + English).";
         } catch (Exception e) {
-            e.printStackTrace();
+            log.warn("Failed to start recognition!", e);
             return "Error starting recognition: " + e.getMessage();
         }
     }

@@ -1,13 +1,20 @@
 package com.example.demo.service;
 
+import com.example.demo.model.VoskResult;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.vosk.Model;
 import org.vosk.Recognizer;
+import tools.jackson.databind.ObjectMapper;
 
 import javax.sound.sampled.*;
+import java.util.Arrays;
 
+@Slf4j
 @Service
 public class SpeechRecognitionService {
+
+    private final ObjectMapper objectMapper;
 
     private static final int SAMPLE_RATE = 16000;
 
@@ -16,7 +23,8 @@ public class SpeechRecognitionService {
     private TargetDataLine line;
     private Thread recognitionThread;
 
-    public SpeechRecognitionService(ModelManagerService modelManagerService) throws Exception {
+    public SpeechRecognitionService(ModelManagerService modelManagerService, ObjectMapper objectMapper) throws Exception {
+        this.objectMapper = objectMapper;
         modelManagerService.checkAndDownloadModels();
         // Load full Ukrainian model
         Model ukModel = new Model("sound/vosk-model-uk-v3");
@@ -26,19 +34,13 @@ public class SpeechRecognitionService {
         enRecognizer = new Recognizer(enModel, SAMPLE_RATE);
     }
 
-    public void init() throws Exception {
-
+    public void initRecognition() throws Exception {
         // Find Voicemeeter mixer
-        Mixer.Info selectedMixer = null;
-        for (Mixer.Info mixerInfo : AudioSystem.getMixerInfo()) {
-            if (mixerInfo.getName().toLowerCase().contains("voicemeeter")) {
-                selectedMixer = mixerInfo;
-                break;
-            }
-        }
-        if (selectedMixer == null) {
-            throw new RuntimeException("Voicemeeter mixer not found!");
-        }
+        Mixer.Info selectedMixer = Arrays.stream(AudioSystem.getMixerInfo())
+                .filter(mixer -> mixer.getName() != null)
+                .filter(mixer -> mixer.getName().toLowerCase().contains("voicemeeter"))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Voicemeeter mixer not found"));
 
         // Setup audio line
         AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
@@ -49,6 +51,7 @@ public class SpeechRecognitionService {
     }
 
     public void startRecognition() {
+
         recognitionThread = new Thread(() -> {
             byte[] buffer = new byte[4096];
             System.out.println("Recognition started...");
@@ -64,7 +67,7 @@ public class SpeechRecognitionService {
                     }
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+                log.error("Error during speech recognition", e);
             }
         });
         recognitionThread.start();
@@ -74,18 +77,49 @@ public class SpeechRecognitionService {
      * Process audio buffer with Ukrainian first, fallback to English
      */
     private String processBuffer(byte[] buffer, int bytesRead) {
-        String ukResult = ukRecognizer.acceptWaveForm(buffer, bytesRead) ?
-                ukRecognizer.getResult() : ukRecognizer.getPartialResult();
 
-        // Check if result is empty or very short → try English
-        if (ukResult == null || ukResult.trim().length() < 2) {
-            String enResult = enRecognizer.acceptWaveForm(buffer, bytesRead) ?
-                    enRecognizer.getResult() : enRecognizer.getPartialResult();
-            return enResult != null ? enResult : "";
+        boolean ukFinal = ukRecognizer.acceptWaveForm(buffer, bytesRead);
+        String ukJson = ukFinal
+                ? ukRecognizer.getResult()
+                : ukRecognizer.getPartialResult();
+
+        String ukText = extractText(ukJson);
+
+        if (ukText.isBlank()) {
+            boolean enFinal = enRecognizer.acceptWaveForm(buffer, bytesRead);
+            String enJson = enFinal
+                    ? enRecognizer.getResult()
+                    : enRecognizer.getPartialResult();
+
+            return extractText(enJson);
         }
 
-        return ukResult;
+        return ukText;
     }
+
+    private String extractText(String json) {
+        if (json == null || json.isBlank()) {
+            return "";
+        }
+
+        try {
+            VoskResult result = objectMapper.readValue(json, VoskResult.class);
+
+            if (result.text() != null && !result.text().isBlank()) {
+                return result.text().trim();
+            }
+
+            if (result.partial() != null) {
+                return result.partial().trim();
+            }
+
+        } catch (Exception e) {
+            log.warn("Failed to parse Vosk JSON: {}", json, e);
+        }
+
+        return "";
+    }
+
 
     public void stopRecognition() {
         if (recognitionThread != null && recognitionThread.isAlive()) {
