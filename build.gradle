@@ -1,3 +1,6 @@
+import java.util.zip.ZipInputStream
+import java.nio.file.*
+
 plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.0.2'
@@ -29,4 +32,73 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+def soundDir = "${projectDir}/sound"
+
+// Full models
+def ukModelName = "vosk-model-uk-v3"                 // full Ukrainian model
+def enModelName = "vosk-model-en-us-0.22"            // full English model
+
+def ukModelUrl = "https://alphacephei.com/vosk/models/vosk-model-uk-v3.zip"
+def enModelUrl = "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip"
+
+tasks.register('prepareVoskModels') {
+	doLast {
+		def models = [
+				(ukModelName): ukModelUrl,
+				(enModelName): enModelUrl
+		]
+
+		// Create 'sound/' folder if it does not exist
+		def soundPath = Paths.get(soundDir)
+		if (!Files.exists(soundPath)) {
+			Files.createDirectories(soundPath)
+		}
+
+		models.each { modelName, url ->
+			def modelPath = Paths.get(soundDir, modelName)
+			if (!Files.exists(modelPath)) {
+				println "Model '${modelName}' not found. Downloading from ${url} ..."
+
+				// Download the ZIP
+				def zipFile = Paths.get(soundDir, "${modelName}.zip")
+				new URL(url).withInputStream { input ->
+					Files.copy(input, zipFile, StandardCopyOption.REPLACE_EXISTING)
+				}
+
+				// Extract ZIP
+				println "Extracting ${modelName}.zip ..."
+				new ZipInputStream(Files.newInputStream(zipFile)).withCloseable { zip ->
+					def entry = zip.nextEntry
+					while (entry != null) {
+						def entryPath = Paths.get(soundDir, entry.name)
+						if (entry.isDirectory()) {
+							Files.createDirectories(entryPath)
+						} else {
+							Files.createDirectories(entryPath.parent)
+							Files.copy(zip, entryPath, StandardCopyOption.REPLACE_EXISTING)
+						}
+						zip.closeEntry()
+						entry = zip.nextEntry
+					}
+				}
+
+				// Delete ZIP after extraction
+				Files.delete(zipFile)
+				println "Model '${modelName}' is ready."
+			} else {
+				println "Model '${modelName}' already exists."
+			}
+		}
+	}
+}
+
+// Ensure models are prepared before build or bootRun
+tasks.named('build') {
+	dependsOn prepareVoskModels
+}
+
+tasks.named('bootRun') {
+	dependsOn prepareVoskModels
 }
