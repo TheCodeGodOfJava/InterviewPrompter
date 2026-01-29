@@ -1,6 +1,5 @@
 package com.example.demo.controller;
 
-
 import com.example.demo.service.SpeechRecognitionService;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,21 +14,20 @@ public class SpeechRecognitionController {
     }
 
     @PostMapping("/start")
-    public String start(@RequestParam(defaultValue = "ru") String lang) {
+    public String start() {
         try {
-            service.init(lang);
+            service.init();
             service.startRecognition();
-            return "Распознавание запущено для языка: " + lang;
+            return "Speech recognition started (Ukrainian + English).";
         } catch (Exception e) {
             e.printStackTrace();
-            return "Ошибка: " + e.getMessage();
+            return "Error starting recognition: " + e.getMessage();
         }
     }
 
     @PostMapping("/stop")
     public String stop() {
         service.stopRecognition();
-        return "Распознавание остановлено";
+        return "Speech recognition stopped.";
     }
 }
-
