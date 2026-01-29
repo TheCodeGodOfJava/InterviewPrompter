@@ -20,7 +20,9 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter'
-	implementation 'org.vosk:vosk:0.4.0'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation("net.java.dev.jna:jna:5.18.1")
+	implementation("com.alphacephei:vosk:0.3.45")
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
