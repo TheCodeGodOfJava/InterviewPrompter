@@ -7,7 +7,6 @@ import org.vosk.Model;
 import org.vosk.Recognizer;
 import tools.jackson.databind.ObjectMapper;
 
-
 import java.io.InputStream;
 
 @Slf4j
@@ -111,14 +110,15 @@ public class SpeechRecognitionService {
             String fixedJson = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
 
             VoskResult result = objectMapper.readValue(fixedJson, VoskResult.class);
-            if (result.text() != null) return result.text();
-            if (result.partial() != null) return result.partial();
+            return result.text() != null ? result.text() : result.partial();
         } catch (Exception e) {
             // Fallback to original if fix fails
             try {
                 VoskResult result = objectMapper.readValue(json, VoskResult.class);
                 return result.text() != null ? result.text() : "";
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                log.error("Failed to extract text from json", e);
+            }
         }
         return "";
     }

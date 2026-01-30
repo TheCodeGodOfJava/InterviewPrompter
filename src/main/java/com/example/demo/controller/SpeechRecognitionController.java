@@ -21,7 +21,7 @@ public class SpeechRecognitionController {
     public String start() {
         try {
             service.start();
-            return "Speech recognition started (Ukrainian + English).";
+            return "Speech recognition started (Ukrainian).";
         } catch (Exception e) {
             log.warn("Failed to start recognition!", e);
             return "Error starting recognition: " + e.getMessage();
