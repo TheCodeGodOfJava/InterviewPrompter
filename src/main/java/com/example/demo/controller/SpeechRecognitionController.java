@@ -20,8 +20,7 @@ public class SpeechRecognitionController {
     @PostMapping("/start")
     public String start() {
         try {
-            service.initRecognition();
-            service.startRecognition();
+            service.start();
             return "Speech recognition started (Ukrainian + English).";
         } catch (Exception e) {
             log.warn("Failed to start recognition!", e);
@@ -31,7 +30,7 @@ public class SpeechRecognitionController {
 
     @PostMapping("/stop")
     public String stop() {
-        service.stopRecognition();
+        service.stop();
         return "Speech recognition stopped.";
     }
 }

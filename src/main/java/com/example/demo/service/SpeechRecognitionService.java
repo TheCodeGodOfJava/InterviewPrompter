@@ -7,128 +7,119 @@ import org.vosk.Model;
 import org.vosk.Recognizer;
 import tools.jackson.databind.ObjectMapper;
 
-import javax.sound.sampled.*;
-import java.util.Arrays;
+
+import java.io.InputStream;
 
 @Slf4j
 @Service
 public class SpeechRecognitionService {
 
+    private static final int SAMPLE_RATE = 16_000;
+
     private final ObjectMapper objectMapper;
+    private final Recognizer recognizer;
 
-    private static final int SAMPLE_RATE = 16000;
-
-    private final Recognizer ukRecognizer;
-    private final Recognizer enRecognizer;
-    private TargetDataLine line;
+    private Process ffmpegProcess;
     private Thread recognitionThread;
 
-    public SpeechRecognitionService(ModelManagerService modelManagerService, ObjectMapper objectMapper) throws Exception {
-        this.objectMapper = objectMapper;
+    private String lastPartial = "";
+
+    public SpeechRecognitionService(ModelManagerService modelManagerService) throws Exception {
         modelManagerService.checkAndDownloadModels();
-        // Load full Ukrainian model
-        Model ukModel = new Model("sound/vosk-model-uk-v3");
-        ukRecognizer = new Recognizer(ukModel, SAMPLE_RATE);
-        // Load full English model
-        Model enModel = new Model("sound/vosk-model-en-us-0.22");
-        enRecognizer = new Recognizer(enModel, SAMPLE_RATE);
+        this.objectMapper = new ObjectMapper();
+        Model model = new Model("sound/vosk-model-uk-v3");
+        this.recognizer = new Recognizer(model, SAMPLE_RATE);
     }
 
-    public void initRecognition() throws Exception {
-        // Find Voicemeeter mixer
-        Mixer.Info selectedMixer = Arrays.stream(AudioSystem.getMixerInfo())
-                .filter(mixer -> mixer.getName() != null)
-                .filter(mixer -> mixer.getName().toLowerCase().contains("voicemeeter"))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Voicemeeter mixer not found"));
-
-        // Setup audio line
-        AudioFormat format = new AudioFormat(SAMPLE_RATE, 16, 1, true, false);
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-        line = (TargetDataLine) AudioSystem.getMixer(selectedMixer).getLine(info);
-        line.open(format);
-        line.start();
-    }
-
-    public void startRecognition() {
-
-        recognitionThread = new Thread(() -> {
-            byte[] buffer = new byte[4096];
-            System.out.println("Recognition started...");
-
-            try {
-                while (!Thread.currentThread().isInterrupted()) {
-                    int n = line.read(buffer, 0, buffer.length);
-                    if (n > 0) {
-                        String result = processBuffer(buffer, n);
-                        if (!result.isEmpty()) {
-                            System.out.println(result);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.error("Error during speech recognition", e);
-            }
-        });
-        recognitionThread.start();
-    }
-
-    /**
-     * Process audio buffer with Ukrainian first, fallback to English
-     */
-    private String processBuffer(byte[] buffer, int bytesRead) {
-
-        boolean ukFinal = ukRecognizer.acceptWaveForm(buffer, bytesRead);
-        String ukJson = ukFinal
-                ? ukRecognizer.getResult()
-                : ukRecognizer.getPartialResult();
-
-        String ukText = extractText(ukJson);
-
-        if (ukText.isBlank()) {
-            boolean enFinal = enRecognizer.acceptWaveForm(buffer, bytesRead);
-            String enJson = enFinal
-                    ? enRecognizer.getResult()
-                    : enRecognizer.getPartialResult();
-
-            return extractText(enJson);
+    public synchronized void start() throws Exception {
+        if (recognitionThread != null && recognitionThread.isAlive()) {
+            return;
         }
 
-        return ukText;
+        ProcessBuilder pb = new ProcessBuilder(
+                "ffmpeg",
+                "-f", "dshow",
+                "-i", "audio=Stereo Mix (Realtek(R) Audio)",
+                "-ac", "1",
+                "-ar", String.valueOf(SAMPLE_RATE),
+                "-f", "s16le",
+                "pipe:1"
+        );
+
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+
+        ffmpegProcess = pb.start();
+        InputStream audioStream = ffmpegProcess.getInputStream();
+
+        recognitionThread = new Thread(() -> runRecognition(audioStream), "Vosk-Recognition");
+        recognitionThread.setDaemon(true);
+        recognitionThread.start();
+
+        log.info("Ukrainian speech recognition started");
+    }
+
+    public synchronized void stop() {
+        if (recognitionThread != null) {
+            recognitionThread.interrupt();
+            recognitionThread = null;
+        }
+        if (ffmpegProcess != null) {
+            ffmpegProcess.destroy();
+            ffmpegProcess = null;
+        }
+        log.info("Speech recognition stopped");
+    }
+
+    private void runRecognition(InputStream audioStream) {
+        byte[] buffer = new byte[4096];
+
+        try {
+            int read;
+            while ((read = audioStream.read(buffer)) != -1) {
+                if (recognizer.acceptWaveForm(buffer, read)) {
+                    String rawJson = recognizer.getResult();
+                    // We fix the encoding immediately upon receiving it from the native library
+                    String text = extractText(rawJson);
+                    if (!text.isBlank()) {
+                        log.info("[UK] {}", text);
+                        lastPartial = "";
+                    }
+                } else {
+                    String rawJson = recognizer.getPartialResult();
+                    String partial = extractText(rawJson);
+                    if (!partial.isBlank() && !partial.equals(lastPartial)) {
+                        log.info("[UK partial] {}", partial);
+                        lastPartial = partial;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Recognition failed", e);
+        } finally {
+            stop();
+        }
     }
 
     private String extractText(String json) {
-        if (json == null || json.isBlank()) {
-            return "";
-        }
-
+        if (json == null || json.isBlank()) return "";
         try {
-            VoskResult result = objectMapper.readValue(json, VoskResult.class);
+            /* * FIX: Vosk (Native) sends UTF-8 bytes.
+             * Windows JVM sees bytes and mistakenly decodes them as Windows-1251.
+             * We convert it back to bytes using Windows-1251 and re-read as UTF-8.
+             */
+            byte[] bytes = json.getBytes(java.nio.charset.Charset.forName("Windows-1251"));
+            String fixedJson = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
 
-            if (result.text() != null && !result.text().isBlank()) {
-                return result.text().trim();
-            }
-
-            if (result.partial() != null) {
-                return result.partial().trim();
-            }
-
+            VoskResult result = objectMapper.readValue(fixedJson, VoskResult.class);
+            if (result.text() != null) return result.text();
+            if (result.partial() != null) return result.partial();
         } catch (Exception e) {
-            log.warn("Failed to parse Vosk JSON: {}", json, e);
+            // Fallback to original if fix fails
+            try {
+                VoskResult result = objectMapper.readValue(json, VoskResult.class);
+                return result.text() != null ? result.text() : "";
+            } catch (Exception ignored) {}
         }
-
         return "";
-    }
-
-
-    public void stopRecognition() {
-        if (recognitionThread != null && recognitionThread.isAlive()) {
-            recognitionThread.interrupt();
-        }
-        if (line != null) {
-            line.stop();
-            line.close();
-        }
-        System.out.println("Recognition stopped.");
     }
 }
