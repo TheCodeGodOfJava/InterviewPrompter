@@ -117,7 +117,7 @@ public class SpeechRecognitionService {
                 VoskResult result = objectMapper.readValue(json, VoskResult.class);
                 return result.text() != null ? result.text() : "";
             } catch (Exception ignored) {
-                log.error("Failed to extract text from json", e);
+                log.error("Failed to extract text from json", ignored);
             }
         }
         return "";

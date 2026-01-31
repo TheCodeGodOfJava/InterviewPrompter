@@ -1,7 +1,6 @@
 package com.example.demo.service;
 
 
-import org.apache.commons.io.FileUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -15,8 +14,20 @@ import java.nio.file.StandardCopyOption;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+
 @Service
 public class ModelManagerService {
+
+    //here we can add new language models
+    //"small" models may be to shallow for your tasks, but "full" models can be more than 1Gb
+    private enum MODEL {
+        UK("vosk-model-uk-v3"), EN("vosk-model-en-us-0.22"), RU("vosk-model-ru-0.42");
+        private final String MODEL_FOLDER_NAME;
+
+        MODEL(String modelFolderName) {
+            this.MODEL_FOLDER_NAME = modelFolderName;
+        }
+    }
 
     private final String SOUND_DIR = "sound";
 
@@ -28,21 +39,16 @@ public class ModelManagerService {
                 throw new IOException("Unable to create sound directory");
             }
         }
-        // Ukrainian model
-        String UK_MODEL_FOLDER = "vosk-model-uk-v3";
-        String UK_MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-uk-v3.zip";
-        downloadModel(UK_MODEL_FOLDER, UK_MODEL_URL);
-        // English model
-        String EN_MODEL_FOLDER = "vosk-model-en-us-0.22";
-        String EN_MODEL_URL = "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip";
-        downloadModel(EN_MODEL_FOLDER, EN_MODEL_URL);
+        for (MODEL model : MODEL.values()) {
+            downloadModel(model.MODEL_FOLDER_NAME);
+        }
     }
 
-    private void downloadModel(String folderName, String modelAddress) throws IOException {
+    private void downloadModel(String folderName) throws IOException {
         File folder = new File(SOUND_DIR, folderName);
         if (!folder.exists()) {
             System.out.print("Downloading " + folderName + " model...%n");
-            downloadAndUnzip(modelAddress);
+            downloadAndUnzip("https://alphacephei.com/vosk/models/" + folderName + ".zip");
             System.out.println(folderName + " model ready.");
         }
     }
@@ -51,11 +57,9 @@ public class ModelManagerService {
         // 1. Download zip to temp file
         // Using NIO.2 for temp file creation
         Path tempZip = Files.createTempFile("vosk_model", ".zip");
-
         try (InputStream in = URI.create(url).toURL().openStream()) {
             Files.copy(in, tempZip, StandardCopyOption.REPLACE_EXISTING);
         }
-
         // 2. Unzip
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(tempZip))) {
             ZipEntry entry;
@@ -64,12 +68,10 @@ public class ModelManagerService {
             while ((entry = zis.getNextEntry()) != null) {
                 // Use resolve to handle paths safely
                 Path entryPath = outputPath.resolve(entry.getName());
-
                 // Security check: Prevent "Zip Slip" vulnerability
                 if (!entryPath.normalize().startsWith(outputPath.normalize())) {
                     throw new IOException("Bad zip entry: " + entry.getName());
                 }
-
                 if (entry.isDirectory()) {
                     Files.createDirectories(entryPath);
                 } else {
