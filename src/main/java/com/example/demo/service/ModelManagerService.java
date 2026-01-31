@@ -47,7 +47,7 @@ public class ModelManagerService {
     private void downloadModel(String folderName) throws IOException {
         File folder = new File(SOUND_DIR, folderName);
         if (!folder.exists()) {
-            System.out.print("Downloading " + folderName + " model...%n");
+            System.out.println("Downloading " + folderName + " model...");
             downloadAndUnzip("https://alphacephei.com/vosk/models/" + folderName + ".zip");
             System.out.println(folderName + " model ready.");
         }
