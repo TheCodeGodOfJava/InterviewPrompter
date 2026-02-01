@@ -57,18 +57,6 @@ public class SpeechRecognitionService {
         log.info("Ukrainian speech recognition started");
     }
 
-    public synchronized void stop() {
-        if (recognitionThread != null) {
-            recognitionThread.interrupt();
-            recognitionThread = null;
-        }
-        if (ffmpegProcess != null) {
-            ffmpegProcess.destroy();
-            ffmpegProcess = null;
-        }
-        log.info("Speech recognition stopped");
-    }
-
     private void runRecognition(InputStream audioStream) {
         byte[] buffer = new byte[4096];
 
