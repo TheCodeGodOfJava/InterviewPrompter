@@ -82,8 +82,6 @@ public class SpeechRecognitionService {
             }
         } catch (Exception e) {
             log.error("Recognition failed", e);
-        } finally {
-            stop();
         }
     }
 
