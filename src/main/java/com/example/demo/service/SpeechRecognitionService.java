@@ -19,19 +19,17 @@ public class SpeechRecognitionService {
 
     private static final int SAMPLE_RATE = 16_000;
 
+    private final LiveTranscriptService liveTranscriptService;
     private final ObjectMapper objectMapper;
     private final Recognizer recognizer;
 
     private Process ffmpegProcess;
     private Thread recognitionThread;
 
-    private String lastPartial = "";
-
     // Constructor remains the same (loads model)
-    public SpeechRecognitionService(ModelManagerService modelManagerService,
-                                    LiveTranscriptService liveTranscriptService,
-                                    ObjectMapper objectMapper) throws Exception {
+    public SpeechRecognitionService(ModelManagerService modelManagerService, LiveTranscriptService liveTranscriptService, ObjectMapper objectMapper) throws Exception {
         modelManagerService.checkAndDownloadModels();
+        this.liveTranscriptService = liveTranscriptService;
         this.objectMapper = objectMapper;
         Model model = new Model("sound/vosk-model-uk-v3");
         this.recognizer = new Recognizer(model, SAMPLE_RATE);
@@ -44,15 +42,7 @@ public class SpeechRecognitionService {
             return;
         }
 
-        ProcessBuilder pb = new ProcessBuilder(
-                "ffmpeg",
-                "-f", "dshow",
-                "-i", "audio=Stereo Mix (Realtek(R) Audio)",
-                "-ac", "1",
-                "-ar", String.valueOf(SAMPLE_RATE),
-                "-f", "s16le",
-                "pipe:1"
-        );
+        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-f", "dshow", "-i", "audio=Stereo Mix (Realtek(R) Audio)", "-ac", "1", "-ar", String.valueOf(SAMPLE_RATE), "-f", "s16le", "pipe:1");
 
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 
@@ -70,22 +60,13 @@ public class SpeechRecognitionService {
         byte[] buffer = new byte[4096];
         try {
             int read;
-            while (!Thread.currentThread().isInterrupted() && (read = audioStream.read(buffer)) != -1) {
-                if (recognizer.acceptWaveForm(buffer, read)) {
-                    String rawJson = recognizer.getResult();
-                    // We fix the encoding immediately upon receiving it from the native library
-                    String text = extractText(rawJson);
-                    if (!text.isBlank()) {
-                        log.info("[UK] {}", text);
-                        lastPartial = "";
-                    }
-                } else {
-                    String rawJson = recognizer.getPartialResult();
-                    String partial = extractText(rawJson);
-                    if (!partial.isBlank() && !partial.equals(lastPartial)) {
-                        log.info("[UK partial] {}", partial);
-                        lastPartial = partial;
-                    }
+            while (!Thread.currentThread().isInterrupted() && (read = audioStream.read(buffer)) != -1 && recognizer.acceptWaveForm(buffer, read)) {
+                String rawJson = recognizer.getResult();
+                // We fix the encoding immediately upon receiving it from the native library
+                String text = extractText(rawJson);
+                if (!text.isBlank()) {
+                    log.info("[UK] {}", text);
+                    liveTranscriptService.appendWord(text.trim());
                 }
             }
         } catch (Exception e) {
