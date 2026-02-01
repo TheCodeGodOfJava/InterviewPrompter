@@ -60,13 +60,15 @@ public class SpeechRecognitionService {
         byte[] buffer = new byte[4096];
         try {
             int read;
-            while (!Thread.currentThread().isInterrupted() && (read = audioStream.read(buffer)) != -1 && recognizer.acceptWaveForm(buffer, read)) {
-                String rawJson = recognizer.getResult();
-                // We fix the encoding immediately upon receiving it from the native library
-                String text = extractText(rawJson);
-                if (!text.isBlank()) {
-                    log.info("[UK] {}", text);
-                    liveTranscriptService.appendWord(text.trim());
+            while (!Thread.currentThread().isInterrupted() && (read = audioStream.read(buffer)) != -1) {
+                if (recognizer.acceptWaveForm(buffer, read)) {
+                    // Final result (utterance complete)
+                    String rawJson = recognizer.getResult();
+                    String text = extractText(rawJson);
+                    if (!text.isBlank()) {
+                        log.info("[UK] {}", text);
+                        liveTranscriptService.appendWord(text.trim());
+                    }
                 }
             }
         } catch (Exception e) {
