@@ -1,6 +1,7 @@
 package com.example.demo.service;
 
 import com.example.demo.model.VoskResult;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.vosk.Model;
@@ -23,15 +24,19 @@ public class SpeechRecognitionService {
 
     private String lastPartial = "";
 
-    public SpeechRecognitionService(ModelManagerService modelManagerService) throws Exception {
+    // Constructor remains the same (loads model)
+    public SpeechRecognitionService(ModelManagerService modelManagerService,
+                                    ObjectMapper objectMapper) throws Exception {
         modelManagerService.checkAndDownloadModels();
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = objectMapper;
         Model model = new Model("sound/vosk-model-uk-v3");
         this.recognizer = new Recognizer(model, SAMPLE_RATE);
     }
 
-    public synchronized void start() throws Exception {
+    // Make public - called once on startup
+    public void startRecognition() throws Exception {
         if (recognitionThread != null && recognitionThread.isAlive()) {
+            log.warn("Recognition already running");
             return;
         }
 
@@ -51,18 +56,17 @@ public class SpeechRecognitionService {
         InputStream audioStream = ffmpegProcess.getInputStream();
 
         recognitionThread = new Thread(() -> runRecognition(audioStream), "Vosk-Recognition");
-        recognitionThread.setDaemon(true);
+        recognitionThread.setDaemon(true);  // ← Good: JVM won't wait for daemon thread on exit
         recognitionThread.start();
 
-        log.info("Ukrainian speech recognition started");
+        log.info("Ukrainian continuous speech recognition started");
     }
 
     private void runRecognition(InputStream audioStream) {
         byte[] buffer = new byte[4096];
-
         try {
             int read;
-            while ((read = audioStream.read(buffer)) != -1) {
+            while (!Thread.currentThread().isInterrupted() && (read = audioStream.read(buffer)) != -1) {
                 if (recognizer.acceptWaveForm(buffer, read)) {
                     String rawJson = recognizer.getResult();
                     // We fix the encoding immediately upon receiving it from the native library
@@ -83,6 +87,31 @@ public class SpeechRecognitionService {
         } catch (Exception e) {
             log.error("Recognition failed", e);
         }
+    }
+
+    // Cleanup on shutdown
+    @PreDestroy
+    public void shutdown() {
+        log.info("Shutting down speech recognition...");
+        if (recognitionThread != null) {
+            recognitionThread.interrupt();
+            try {
+                recognitionThread.join(5000); // Give it time to exit
+            } catch (InterruptedException ignored) {
+            }
+        }
+        if (ffmpegProcess != null && ffmpegProcess.isAlive()) {
+            ffmpegProcess.destroy();
+            try {
+                ffmpegProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+            }
+            if (ffmpegProcess.isAlive()) {
+                ffmpegProcess.destroyForcibly();
+            }
+        }
+        recognizer.close(); // Important: release Vosk resources
+        log.info("Speech recognition stopped cleanly");
     }
 
     private String extractText(String json) {
