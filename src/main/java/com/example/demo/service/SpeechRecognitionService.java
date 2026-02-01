@@ -29,6 +29,7 @@ public class SpeechRecognitionService {
 
     // Constructor remains the same (loads model)
     public SpeechRecognitionService(ModelManagerService modelManagerService,
+                                    LiveTranscriptService liveTranscriptService,
                                     ObjectMapper objectMapper) throws Exception {
         modelManagerService.checkAndDownloadModels();
         this.objectMapper = objectMapper;

@@ -21,6 +21,7 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 	implementation 'net.java.dev.jna:jna:5.18.1'
 	implementation 'com.alphacephei:vosk:0.3.45'
 	implementation 'commons-io:commons-io:2.14.0'
