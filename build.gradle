@@ -16,12 +16,20 @@ java {
 
 repositories {
 	mavenCentral()
+	maven { url 'https://repo.spring.io/milestone' }
 }
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
+	// Spring AI Ollama starter
+	implementation 'org.springframework.ai:spring-ai-ollama-spring-boot-starter:1.0.0-M6'
+
+	// Core (usually pulled automatically, but safe)
+	implementation 'org.springframework.ai:spring-ai-core:1.0.0-M6'
+
 	implementation 'net.java.dev.jna:jna:5.18.1'
 	implementation 'com.alphacephei:vosk:0.3.45'
 	implementation 'commons-io:commons-io:2.14.0'
