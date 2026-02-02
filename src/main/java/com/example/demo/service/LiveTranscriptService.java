@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import com.example.demo.model.TranscriptUpdate;
+import com.example.demo.model.WordEntry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -57,8 +59,4 @@ public class LiveTranscriptService {
         simpMessagingTemplate.convertAndSend("/topic/transcript",
                 new TranscriptUpdate(fullText, version, getCurrentWords()));
     }
-
-    // DTOs
-    public record WordEntry(int index, String word) {}
-    public record TranscriptUpdate(String fullText, long version, List<WordEntry> words) {}
 }

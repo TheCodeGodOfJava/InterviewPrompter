@@ -1,8 +1,8 @@
 package com.example.demo.controller;
 
+import com.example.demo.model.TranscriptUpdate;
+import com.example.demo.model.WordEntry;
 import com.example.demo.service.LiveTranscriptService;
-import com.example.demo.service.LiveTranscriptService.TranscriptUpdate;
-import com.example.demo.service.LiveTranscriptService.WordEntry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.web.bind.annotation.GetMapping;

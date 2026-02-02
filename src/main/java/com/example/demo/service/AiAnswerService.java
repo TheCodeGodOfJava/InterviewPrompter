@@ -1,5 +1,6 @@
 package com.example.demo.service;
 
+import com.example.demo.model.AiUpdate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -30,7 +31,7 @@ public class AiAnswerService {
                 lastAnswer.set(response);
 
                 // Push it for WebSocket subscribers
-                messagingTemplate.convertAndSend("/topic/ai-response", new AIUpdate(response));
+                messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(response));
             } catch (Exception e) {
                 log.error("Ollama AI processing failed", e);
             }
@@ -41,6 +42,4 @@ public class AiAnswerService {
         return lastAnswer.get();
     }
 
-    public record AIUpdate(String answer) {
-    }
 }

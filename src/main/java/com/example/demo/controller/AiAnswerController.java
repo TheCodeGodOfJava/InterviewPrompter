@@ -1,7 +1,7 @@
 package com.example.demo.controller;
 
+import com.example.demo.model.AiUpdate;
 import com.example.demo.service.AiAnswerService;
-import com.example.demo.service.AiAnswerService.AIUpdate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,15 +16,15 @@ public class AiAnswerController {
     private final AiAnswerService aiAnswerService;
 
     @GetMapping("/latest")
-    public AIUpdate getLatest() {
-        return new AIUpdate(aiAnswerService.getLatestAnswer());
+    public AiUpdate getLatest() {
+        return new AiUpdate(aiAnswerService.getLatestAnswer());
     }
 
     /**
      * Sends the latest AI answer immediately upon WebSocket subscription
      */
     @SubscribeMapping("/ai-response")
-    public AIUpdate onSubscribe() {
+    public AiUpdate onSubscribe() {
         return getLatest();
     }
 }
