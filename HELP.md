@@ -6,6 +6,7 @@
 ---
 
 ## ✅ Prerequisites & Installation
+Take notice that at the time of developing this app, Spring AI was INCOMPATIBLE with SpringBoot 4.0 or higher
 
 ### 1️⃣ Install FFmpeg (required for audio processing)
 
