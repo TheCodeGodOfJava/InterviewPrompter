@@ -85,7 +85,7 @@ public class SpeechRecognitionService {
             this.shutdownSource(); // safety net
         }
 
-        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-f", "dshow", "-i", this.source.getDshowName(), "-ac", "1", "-ar", String.valueOf(SAMPLE_RATE), "-f", "s16le", "pipe:1");
+        ProcessBuilder pb = getProcessBuilder();
 
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 
@@ -97,6 +97,34 @@ public class SpeechRecognitionService {
         recognitionThread.start();
 
         log.info("Speech recognition started with {}", source);
+    }
+
+    private ProcessBuilder getProcessBuilder() {
+        List<String> command = new ArrayList<>();
+        command.add("ffmpeg");
+
+        // Скрываем лишний мусор из логов, чтобы не забивать буфер
+        command.add("-loglevel");
+        command.add("quiet");
+
+        command.add("-f");
+        command.add("dshow");
+
+        // Устройство ввода
+        command.add("-i");
+        command.add("audio=" + source.getDshowName());
+
+        // ПАРАМЕТРЫ КОНВЕРТАЦИИ (Критически важно!)
+        command.add("-ar");
+        command.add(String.valueOf(SAMPLE_RATE)); // 16000
+        command.add("-ac");
+        command.add("1");                         // Смешиваем стерео в моно
+
+        command.add("-f");
+        command.add("s16le");                     // Raw PCM 16-bit
+        command.add("pipe:1");                    // Вывод в стандартный поток
+
+        return new ProcessBuilder(command);
     }
 
     private void runRecognition(InputStream audioStream) {
