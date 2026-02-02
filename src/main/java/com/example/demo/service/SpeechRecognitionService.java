@@ -1,9 +1,11 @@
 package com.example.demo.service;
 
+import com.example.demo.model.SOURCE;
 import com.example.demo.model.VoskResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.vosk.Model;
@@ -16,6 +18,11 @@ import java.util.List;
 @Slf4j
 @Service
 public class SpeechRecognitionService {
+
+    // Add near the top of SpeechRecognitionService
+
+    @Getter
+    private volatile SOURCE source = SOURCE.STEREO_MIX;
 
     private static final int SAMPLE_RATE = 16_000;
 
@@ -38,24 +45,58 @@ public class SpeechRecognitionService {
     }
 
     @PostConstruct
+    public void init() throws Exception {
+        // Optional: start with default on boot
+        startRecognition();
+    }
+
+    // In SpeechRecognitionService
+
+    /**
+     * Switches to a new audio source: stops current if running, updates source, starts new.
+     * Thread-safe via synchronized.
+     */
+    public synchronized void switchAudioSource(SOURCE newSource) throws Exception {
+        if (newSource == null) {
+            throw new IllegalArgumentException("New source cannot be null");
+        }
+
+        if (newSource == this.source) {
+            log.info("Already using source: {}", newSource);
+            return; // No-op if same source
+        }
+
+        log.info("Switching audio source from {} to {}", this.source, newSource);
+
+        // 1. Gracefully stop current capture
+        this.shutdownSource();
+
+        // 2. Update source **before** starting new one (so getCurrentSource() is correct even if start fails)
+        this.source = newSource;
+
+        // 3. Start new recognition with the updated source
+        startRecognition();  // renamed helper method
+    }
+
+    @PostConstruct
     public void startRecognition() throws Exception {
         if (recognitionThread != null && recognitionThread.isAlive()) {
             log.warn("Recognition already running");
-            return;
+            this.shutdownSource(); // safety net
         }
 
-        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-f", "dshow", "-i", "audio=Stereo Mix (Realtek(R) Audio)", "-ac", "1", "-ar", String.valueOf(SAMPLE_RATE), "-f", "s16le", "pipe:1");
+        ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-f", "dshow", "-i", this.source.getDshowName(), "-ac", "1", "-ar", String.valueOf(SAMPLE_RATE), "-f", "s16le", "pipe:1");
 
         pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 
         ffmpegProcess = pb.start();
         InputStream audioStream = ffmpegProcess.getInputStream();
 
-        recognitionThread = new Thread(() -> runRecognition(audioStream), "Vosk-Recognition");
+        recognitionThread = new Thread(() -> runRecognition(audioStream), "Vosk-Recognition-" + source.name());
         recognitionThread.setDaemon(true);  // ← Good: JVM won't wait for daemon thread on exit
         recognitionThread.start();
 
-        log.info("Ukrainian continuous speech recognition started");
+        log.info("Speech recognition started with {}", source);
     }
 
     private void runRecognition(InputStream audioStream) {
@@ -104,8 +145,7 @@ public class SpeechRecognitionService {
         return "";
     }
 
-    @PreDestroy
-    public void shutdown() {
+    private void shutdownSource() {
         log.info("Initiating speech recognition shutdown");
 
         List<Throwable> problems = new ArrayList<>();
@@ -143,17 +183,21 @@ public class SpeechRecognitionService {
             }
         }
 
-        try {
-            recognizer.close();
-        } catch (Exception e) {
-            problems.add(e);
-        }
-
         if (!problems.isEmpty()) {
             log.warn("Some problems occurred during speech recognition shutdown ({} issues)", problems.size());
             problems.forEach(t -> log.debug("Shutdown issue", t));
         } else {
             log.info("Speech recognition shutdown completed cleanly");
+        }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        this.shutdownSource();
+        try {
+            recognizer.close();
+        } catch (Exception e) {
+            log.error("Speech recognizer shutdown failed", e);
         }
     }
 }
