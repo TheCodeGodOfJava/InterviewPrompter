@@ -1,13 +1,13 @@
 package com.example.demo.service;
 
 import com.example.demo.model.VoskResult;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.vosk.Model;
 import org.vosk.Recognizer;
-import tools.jackson.databind.ObjectMapper;
 
 import java.io.InputStream;
 import java.util.ArrayList;

@@ -33,7 +33,7 @@ public class AiManagerService {
             log.info("Ollama successfully started automatically");
         } else {
             log.error("""
-                    Failed to automatically start Ollama.
+                    Failed to automatically start Ollama!
                     Please start it manually:
                       1. Open a terminal
                       2. Execute: ollama serve
@@ -58,6 +58,7 @@ public class AiManagerService {
             int responseCode = conn.getResponseCode();
             return responseCode == 200;
         } catch (IOException e) {
+            log.error("Failed to connect to Ollama API!");
             return false;
         }
     }
