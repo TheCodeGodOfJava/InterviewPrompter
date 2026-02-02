@@ -19,6 +19,7 @@ public class SpeechRecognitionService {
 
     private static final int SAMPLE_RATE = 16_000;
 
+    private final AiAnswerService aiAnswerService;
     private final LiveTranscriptService liveTranscriptService;
     private final ObjectMapper objectMapper;
     private final Recognizer recognizer;
@@ -27,8 +28,9 @@ public class SpeechRecognitionService {
     private Thread recognitionThread;
 
     // Constructor remains the same (loads model)
-    public SpeechRecognitionService(ModelManagerService modelManagerService, LiveTranscriptService liveTranscriptService, ObjectMapper objectMapper) throws Exception {
+    public SpeechRecognitionService(ModelManagerService modelManagerService, LiveTranscriptService liveTranscriptService, AiAnswerService aiAnswerService, ObjectMapper objectMapper) throws Exception {
         modelManagerService.checkAndDownloadModels();
+        this.aiAnswerService = aiAnswerService;
         this.liveTranscriptService = liveTranscriptService;
         this.objectMapper = objectMapper;
         Model model = new Model("sound/vosk-model-uk-v3");
@@ -66,8 +68,11 @@ public class SpeechRecognitionService {
                     String rawJson = recognizer.getResult();
                     String text = extractText(rawJson);
                     if (!text.isBlank()) {
-                        log.info("[UK] {}", text);
-                        liveTranscriptService.appendWord(text.trim());
+                        String extractedText = text.trim();
+                        log.info("[UK] {}", extractedText);
+                        liveTranscriptService.appendWord(extractedText);
+                        // NEW: Trigger AI processing
+                        aiAnswerService.processSpeechWithAI(liveTranscriptService.getCurrentText());
                     }
                 }
             }
