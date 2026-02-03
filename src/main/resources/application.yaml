@@ -5,7 +5,7 @@ spring:
     ollama:
       chat:
         options:
-          model: "deepseek-coder:6.7b"
+          model: "deepseek-coder:6.7b-instruct-q4_K_M"
           # Lower temperature (0.3-0.5) makes the AI more factual and less likely
           # to "ramble" during a technical interview.
           temperature: 0.4

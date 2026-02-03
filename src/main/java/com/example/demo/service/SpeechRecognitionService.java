@@ -2,10 +2,10 @@ package com.example.demo.service;
 
 import com.example.demo.model.SOURCE;
 import com.example.demo.service.engine.SpeechRecognizerEngine;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
@@ -16,9 +16,10 @@ import static com.example.demo.service.engine.SpeechRecognizerEngine.SAMPLE_RATE
 
 @Slf4j
 @Service
-public class SpeechRecognitionService {
+public class SpeechRecognitionService implements SmartInitializingSingleton {
 
     private volatile SpeechRecognizerEngine currentEngine;
+    private boolean isRunning = false;
 
     @Getter
     private volatile SOURCE source = SOURCE.STEREO_MIX;
@@ -39,13 +40,6 @@ public class SpeechRecognitionService {
         if (this.currentEngine != null) this.currentEngine.close();
         this.currentEngine = engine;
     }
-
-    @PostConstruct
-    public void init() throws Exception {
-        startRecognition();
-    }
-
-    // In SpeechRecognitionService
 
     /**
      * Switches to a new audio source: stops current if running, updates source, starts new.
@@ -73,8 +67,11 @@ public class SpeechRecognitionService {
         startRecognition();  // renamed helper method
     }
 
-    @PostConstruct
     public void startRecognition() throws Exception {
+        if (isRunning) {
+            log.info("Speech recognition is already active. Ignoring start request.");
+            return;
+        }
         if (recognitionThread != null && recognitionThread.isAlive()) {
             log.warn("Recognition already running");
             this.shutdownSource(); // safety net
@@ -91,6 +88,7 @@ public class SpeechRecognitionService {
         recognitionThread.setDaemon(true);  // ← Good: JVM won't wait for daemon thread on exit
         recognitionThread.start();
 
+        isRunning = true;
         log.info("Speech recognition started with {}", source);
     }
 
@@ -143,6 +141,7 @@ public class SpeechRecognitionService {
 
     private void shutdownSource() {
         log.info("Initiating speech recognition shutdown");
+        isRunning = false;
 
         List<Throwable> problems = new ArrayList<>();
 
@@ -191,5 +190,14 @@ public class SpeechRecognitionService {
     public void shutdown() {
         this.shutdownSource();
         this.setEngine(null);
+    }
+
+    @Override
+    public void afterSingletonsInstantiated() {
+        try {
+            startRecognition();
+        } catch (Exception e) {
+            log.info("Unable to start speech recognition", e);
+        }
     }
 }

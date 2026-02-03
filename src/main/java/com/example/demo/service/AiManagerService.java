@@ -1,8 +1,8 @@
 // src/main/java/com/example/demo/service/OllamaManagerService.java
 package com.example.demo.service;
 
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -14,12 +14,11 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-public class AiManagerService {
+public class AiManagerService implements SmartInitializingSingleton {
 
     private static final String OLLAMA_API_URL = "http://localhost:11434/api/tags";
     private static final long STARTUP_TIMEOUT_SECONDS = 15;
 
-    @PostConstruct
     public void initializeOllama() {
         if (isOllamaRunning()) {
             log.info("Ollama is already running and accessible on port 11434");
@@ -52,13 +51,11 @@ public class AiManagerService {
             URL url = URI.create(OLLAMA_API_URL).toURL();
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
-            conn.setConnectTimeout(2000); // 2 seconds
-            conn.setReadTimeout(2000);
+            conn.setConnectTimeout(1000); // Shorter timeout for quick checks
 
-            int responseCode = conn.getResponseCode();
-            return responseCode == 200;
+            return conn.getResponseCode() == 200;
         } catch (IOException e) {
-            log.error("Failed to connect to Ollama API!");
+            log.info("Ollama. Failed to connect to the server.");
             return false;
         }
     }
@@ -119,5 +116,10 @@ public class AiManagerService {
             }
         }
         return false;
+    }
+
+    @Override
+    public void afterSingletonsInstantiated() {
+        initializeOllama();
     }
 }
