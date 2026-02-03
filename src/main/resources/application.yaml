@@ -1,12 +1,17 @@
+speech:
+  engine: "whisper"
 spring:
   ai:
     ollama:
-      base-url: http://localhost:11434
       chat:
         options:
-          model: "deepseek-coder-v2:16b"
-          temperature: 0.7
-          max-tokens: 1024
+          model: "deepseek-coder:6.7b"
+          # Lower temperature (0.3-0.5) makes the AI more factual and less likely
+          # to "ramble" during a technical interview.
+          temperature: 0.4
+          # 1024 is good, but for quick "prompts", 512 is often enough
+          # and slightly faster.
+          max-tokens: 512
   threads:
     virtual:
       enabled: true

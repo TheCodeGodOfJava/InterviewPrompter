@@ -8,6 +8,8 @@
 ## ✅ Prerequisites & Installation
 Take notice that at the time of developing this app, Spring AI was INCOMPATIBLE with SpringBoot 4.0 or higher
 
+For "Whisper" text recognition you need docker installed
+
 ### 1️⃣ Install FFmpeg (required for audio processing)
 
 Download the **full build** (❌ *not* the essentials version):
@@ -78,9 +80,9 @@ Install Ollama (one-time, ~5 minutes)
 - Go to: https://ollama.com/download
 - Download and install the version for Windows 11
 - Open terminal / cmd / PowerShell and run: ollama --version → You should see something like ollama version 0.3.x (or newer).
-- Open terminal / cmd / PowerShell and run: ollama pull deepseek-coder-v2:16b (or newer)
+- Open terminal / cmd / PowerShell and run: ollama pull deepseek-coder:6.7b (or newer)
 - Size: ~9 GB (downloads once).
 
-To test Open terminal / cmd / PowerShell and run: ollama run deepseek-coder-v2:16b
+To test Open terminal / cmd / PowerShell and run: ollama run deepseek-coder:6.7b
 
 Few seconds later you will see "Send a message"

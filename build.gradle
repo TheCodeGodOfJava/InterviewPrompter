@@ -1,7 +1,7 @@
 plugins {
-	id 'java'
-	id 'org.springframework.boot' version '3.4.2'
-	id 'io.spring.dependency-management' version '1.1.7'
+    id 'java'
+    id 'org.springframework.boot' version '3.4.2'
+    id 'io.spring.dependency-management' version '1.1.7'
 }
 
 group = 'com.example'
@@ -9,46 +9,54 @@ version = '0.0.1-SNAPSHOT'
 description = 'Demo project for Spring Boot'
 
 java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(21)
-	}
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 repositories {
-	mavenCentral()
-	maven { url 'https://repo.spring.io/milestone' }
+    mavenCentral()
+    maven { url 'https://repo.spring.io/milestone' }
 }
 
 dependencies {
-	implementation 'org.springframework.boot:spring-boot-starter'
-	implementation 'org.springframework.boot:spring-boot-starter-web'
-	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
-	// Spring AI Ollama starter
-	implementation 'org.springframework.ai:spring-ai-ollama-spring-boot-starter'
+    // Spring AI Ollama starter
+    implementation 'org.springframework.ai:spring-ai-ollama-spring-boot-starter'
 
-	// Core (usually pulled automatically, but safe)
-	implementation 'org.springframework.ai:spring-ai-core'
+    // Core (usually pulled automatically, but safe)
+    implementation 'org.springframework.ai:spring-ai-core'
 
-	implementation 'net.java.dev.jna:jna:5.18.1'
-	implementation 'com.alphacephei:vosk:0.3.45'
-	implementation 'commons-io:commons-io:2.14.0'
+    implementation 'net.java.dev.jna:jna:5.18.1'
+    implementation 'com.alphacephei:vosk:0.3.45'
+    implementation 'commons-io:commons-io:2.14.0'
+    implementation 'com.github.docker-java:docker-java-core:3.7.0'
+    implementation 'com.github.docker-java:docker-java-transport-httpclient5:3.7.0'
 
-	compileOnly 'org.projectlombok:lombok:1.18.30'
-	annotationProcessor 'org.projectlombok:lombok:1.18.30'
+    constraints {
+        implementation('com.fasterxml.jackson.core:jackson-databind:2.18.2')
+        implementation('com.fasterxml.jackson.core:jackson-core:2.18.2')
+        implementation('com.fasterxml.jackson.core:jackson-annotations:2.18.2')
+    }
 
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 dependencyManagement {
-	imports {
-		// This BOM will automatically pick the version of Spring AI
-		// that is compatible with Spring Boot 4.0.x
-		mavenBom "org.springframework.ai:spring-ai-bom:1.0.0-M6"
-	}
+    imports {
+        // This BOM will automatically pick the version of Spring AI
+        // that is compatible with Spring Boot 4.0.x
+        mavenBom "org.springframework.ai:spring-ai-bom:1.0.0-M6"
+    }
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+    useJUnitPlatform()
 }
