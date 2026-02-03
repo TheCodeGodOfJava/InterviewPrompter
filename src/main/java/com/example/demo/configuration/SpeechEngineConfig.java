@@ -20,9 +20,9 @@ public class SpeechEngineConfig {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "speech.engine", havingValue = "whisper", matchIfMissing = true)
-    public SpeechRecognizerEngine whisperEngine() {
-        log.info("Loading Whisper Engine (AMD ROCm GPU)");
-        return new WhisperEngine();
+    public SpeechRecognizerEngine whisperEngine(ObjectMapper mapper) {
+        log.info("Loading Whisper Engine (CPU)");
+        return new WhisperEngine(mapper);
     }
 
     @Bean
