@@ -24,6 +24,8 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
@@ -290,152 +292,139 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     }
 
     private void dispatchToAi(byte[] payload, Consumer<String> onResult) {
-        // Fire and Forget (Non-blocking)
-        CompletableFuture.runAsync(() -> {
-            try {
-                // This blocks the WORKER thread, not the AUDIO thread
-                String text = transcribe(payload);
-
-                if (text != null && !text.isBlank()) {
-                    log.info(">> AI Recognized: [{}]", text);
-                    onResult.accept(text);
-                }
-            } catch (Exception e) {
-                log.error("Async transcription error", e);
+        transcribe(payload).thenAccept(text -> {
+            if (text != null && !text.isBlank()) {
+                onResult.accept(text);
             }
         });
     }
 
-    private String transcribe(byte[] audio) {
+    private CompletableFuture<String> transcribe(byte[] audio) {
         try {
+            // 1. Prepare Payload (Fast, zero-copy methods we created earlier)
             byte[] wavData = addWavHeader(audio);
-            // CRITICAL: Ensure no spaces in boundary
             String boundary = "JavaBoundary" + System.currentTimeMillis();
-
-            // This builds the standard OpenAI-compatible multipart format
             byte[] multipartBody = buildMultipartBody(wavData, boundary);
 
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create("http://localhost:8000/v1/audio/transcriptions")).header("Content-Type", "multipart/form-data; boundary=" + boundary).POST(HttpRequest.BodyPublishers.ofByteArray(multipartBody)).build();
+            // 2. Build Request
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://localhost:8000/v1/audio/transcriptions"))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(multipartBody))
+                    .build();
 
-            // Log exactly what we are about to send
-            log.info("Sending request to Whisper (Payload size: {} bytes)...", multipartBody.length);
+            // 3. LOGGING: Use DEBUG for heavy payloads. Keep INFO clean.
+            log.debug("Dispatching {} bytes to Whisper...", multipartBody.length);
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            // 4. ASYNC I/O: This is the magic.
+            // It returns immediately. The HTTP Client handles the socket in the background.
+            return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        // This runs LATER, when the response arrives
+                        if (response.statusCode() != 200) {
+                            log.error("Whisper API Error {}: {}", response.statusCode(), response.body());
+                            return null;
+                        }
+                        try {
+                            // Fast parsing
+                            JsonNode node = objectMapper.readTree(response.body());
+                            String text = node.path("text").asText("").trim();
+                            log.info(">> AI Recognized: [{}]", text);
+                            return text;
+                        } catch (Exception e) {
+                            log.error("JSON Parsing Failed", e);
+                            return null;
+                        }
+                    })
+                    .exceptionally(ex -> {
+                        log.error("Transcription Network Error", ex);
+                        return null;
+                    });
 
-            // ALWAYS log the response, even if it's empty
-            log.info("Whisper HTTP {} | Raw Response: [{}]", response.statusCode(), response.body());
-
-            if (response.statusCode() != 200) {
-                log.error("Whisper API error: {} - {}", response.statusCode(), response.body());
-                return null;
-            }
-
-            // LOG THE RAW JSON RESULT
-            log.info("Whisper Result: {}", response.body());
-            JsonNode node = objectMapper.readTree(response.body());
-            String text = node.path("text").asText("");
-            return text.trim(); // Returns JSON with "text" field
         } catch (Exception e) {
-            log.error("Transcription failed: {}", e.getMessage());
-            return null;
+            log.error("Transcription Setup Failed", e);
+            return CompletableFuture.completedFuture(null);
         }
     }
 
-    private byte[] buildMultipartBody(byte[] wavData, String boundary) throws Exception {
-        ByteArrayOutputStream os = new ByteArrayOutputStream();
-        String lineBreak = "\r\n";
+    private byte[] buildMultipartBody(byte[] wavData, String boundary) {
+        // 1. Prepare Static Constants (US_ASCII is faster for headers)
+        byte[] CRLF = "\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] BOUNDARY_LINE = ("--" + boundary + "\r\n").getBytes(StandardCharsets.US_ASCII);
+        byte[] END_BOUNDARY = ("--" + boundary + "--\r\n").getBytes(StandardCharsets.US_ASCII);
 
-        // 1. FILE PART
-        os.write(("--" + boundary + lineBreak).getBytes());
-        os.write(("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"" + lineBreak).getBytes());
-        os.write(("Content-Type: audio/wav" + lineBreak + lineBreak).getBytes());
-        os.write(wavData);
-        os.write(lineBreak.getBytes());
+        // 2. Prepare Part Headers & Values
+        byte[] fileHeader = ("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n" +
+                "Content-Type: audio/wav\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
 
-        // 2. MODEL PART
-        os.write(("--" + boundary + lineBreak).getBytes());
-        os.write(("Content-Disposition: form-data; name=\"model\"" + lineBreak + lineBreak).getBytes());
-        os.write((MODEL_NAME + lineBreak).getBytes());  // Use large for Ukrainian + English mix
+        byte[] modelHeader = "Content-Disposition: form-data; name=\"model\"\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] modelValue = MODEL_NAME.getBytes(StandardCharsets.UTF_8);
 
-        // 3. LANGUAGE PART (force Ukrainian)
-        os.write(("--" + boundary + lineBreak).getBytes());
-        os.write(("Content-Disposition: form-data; name=\"language\"" + lineBreak + lineBreak).getBytes());
-        os.write(("uk" + lineBreak).getBytes());
+        byte[] langHeader = "Content-Disposition: form-data; name=\"language\"\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] langValue = "uk".getBytes(StandardCharsets.UTF_8);
 
-        // 4. PROMPT PART (prime for English tech terms in Ukrainian)
-        os.write(("--" + boundary + lineBreak).getBytes());
-        os.write(("Content-Disposition: form-data; name=\"prompt\"" + lineBreak + lineBreak).getBytes());
-        os.write(("Обговорення програмування: Java, Angular, class, SQL, database та інше." + lineBreak).getBytes());  // Example prompt in Ukrainian with English terms
+        byte[] tempHeader = "Content-Disposition: form-data; name=\"temperature\"\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] tempValue = "0".getBytes(StandardCharsets.US_ASCII);
 
-        // 5. END BOUNDARY
-        os.write(("--" + boundary + "--" + lineBreak).getBytes());
+        // Prompt needs UTF-8 for Ukrainian characters
+        byte[] promptHeader = "Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] promptValue = "Обговорення програмування: Java, Angular, class, SQL, database та інше.".getBytes(StandardCharsets.UTF_8);
 
-        return os.toByteArray();
+        // 3. CALCULATE EXACT SIZE (To avoid array resizing)
+        int totalSize = 0;
+
+        // File Part
+        totalSize += BOUNDARY_LINE.length + fileHeader.length + wavData.length + CRLF.length;
+        // Model Part
+        totalSize += BOUNDARY_LINE.length + modelHeader.length + modelValue.length + CRLF.length;
+        // Language Part
+        totalSize += BOUNDARY_LINE.length + langHeader.length + langValue.length + CRLF.length;
+        // Temperature Part (Critical for Anti-Hallucination)
+        totalSize += BOUNDARY_LINE.length + tempHeader.length + tempValue.length + CRLF.length;
+        // Prompt Part
+        totalSize += BOUNDARY_LINE.length + promptHeader.length + promptValue.length + CRLF.length;
+        // Footer
+        totalSize += END_BOUNDARY.length;
+
+        // 4. ALLOCATE ONCE & FILL
+        ByteBuffer buf = ByteBuffer.allocate(totalSize);
+
+        buf.put(BOUNDARY_LINE).put(fileHeader).put(wavData).put(CRLF);
+        buf.put(BOUNDARY_LINE).put(modelHeader).put(modelValue).put(CRLF);
+        buf.put(BOUNDARY_LINE).put(langHeader).put(langValue).put(CRLF);
+        buf.put(BOUNDARY_LINE).put(tempHeader).put(tempValue).put(CRLF); // Added Temperature=0
+        buf.put(BOUNDARY_LINE).put(promptHeader).put(promptValue).put(CRLF);
+        buf.put(END_BOUNDARY);
+
+        return buf.array(); // Returns the backing array directly (No copy)
     }
 
     private void warmUpModel() {
         log.info("Warming up Whisper model (forcing RAM allocation)...");
 
+        // 1 second of silence
         byte[] warmupPayload = new byte[SAMPLE_RATE * 2];
 
-        // We leave the array as all zeros (Silence).
-        // Whisper handles pure silence fine for a warmup; it just returns empty text.
-
         try {
-            // We call transcribe() directly (blocking), not dispatchToAi()
-            // We want the app to WAIT here until the model is ready.
-            String result = transcribe(warmupPayload);
+            // FIX: Use .join() to turn the Async Future back into a Synchronous wait.
+            // This forces the app to pause here until Whisper replies.
+            String result = transcribe(warmupPayload).join();
+
             log.info("Whisper model is WARM. Init result: [{}]", result);
         } catch (Exception e) {
-            log.warn("Warmup warning: Model might still be loading. {}", e.getMessage());
+            log.warn("Warmup warning: Model might still be loading or container not ready. {}", e.getMessage());
         }
     }
 
     private String startContainer() {
         log.info("Cleaning up existing Whisper containers on port 8000...");
-        try {
-            // 1. Find and remove any container already using port 8000
-            dockerClient.listContainersCmd()
-                    .withShowAll(true)
-                    .withLabelFilter(java.util.Map.of(ENGINE_LABEL_KEY, ENGINE_LABEL_VALUE))
-                    .exec().forEach(c -> {
-                        log.info("Removing managed container: {}", c.getId());
-                        try {
-                            dockerClient.removeContainerCmd(c.getId()).withForce(true).exec();
-                        } catch (Exception ignored) {
-                            log.info("Failed to remove container: {}", c.getId());
-                        }
-                    });
-            // 2. Safety Fallback: Still check port 8000 specifically
-            // (Handles containers not created by this app but blocking the port)
-            dockerClient.listContainersCmd().withShowAll(true).exec().stream()
-                    .filter(c -> java.util.Arrays.stream(c.getPorts())
-                            .anyMatch(p -> p.getPublicPort() != null && p.getPublicPort() == 8000))
-                    .forEach(c -> {
-                        log.info("Removing orphan container on port 8000: {}", c.getId());
-                        try {
-                            dockerClient.removeContainerCmd(c.getId()).withForce(true).exec();
-                        } catch (Exception ignored) {
-                            log.info("Failed to remove orphan container on port 8000: {}", c.getId());
-                        }
-                    });
-        } catch (Exception e) {
-            log.warn("Cleanup failed, attempting to proceed anyway: {}", e.getMessage());
-        }
+        cleanupContainer();
 
         var portBindings = PortBinding.parse("8000:8000");
 
         // Named volume for persistence (managed by Docker; create if not exists)
         String volumeName = "speaches-hf-cache";
-
-        // Create the named volume if it doesn't exist (idempotent)
-        try {
-            dockerClient.inspectVolumeCmd(volumeName).exec();
-            log.info("Named volume '{}' already exists.", volumeName);
-        } catch (com.github.dockerjava.api.exception.NotFoundException e) {
-            log.info("Creating named volume '{}'.", volumeName);
-            dockerClient.createVolumeCmd().withName(volumeName).exec();
-        }
+        createVolumeIfNotExists(volumeName);
 
         var containerResponse = dockerClient.createContainerCmd("ghcr.io/speaches-ai/speaches:latest-cpu")
                 .withLabels(java.util.Map.of(ENGINE_LABEL_KEY, ENGINE_LABEL_VALUE)) // <--- ADD LABEL
@@ -463,59 +452,71 @@ public class WhisperEngine implements SpeechRecognizerEngine {
         return containerResponse.getId();
     }
 
+    private void createVolumeIfNotExists(String volumeName) {
+        // Create the named volume if it doesn't exist (idempotent)
+        try {
+            dockerClient.inspectVolumeCmd(volumeName).exec();
+            log.info("Named volume '{}' already exists.", volumeName);
+        } catch (com.github.dockerjava.api.exception.NotFoundException e) {
+            log.info("Creating named volume '{}'.", volumeName);
+            dockerClient.createVolumeCmd().withName(volumeName).exec();
+        }
+    }
+
+    private void cleanupContainer() {
+        try {
+            dockerClient.listContainersCmd().withShowAll(true).exec().stream()
+                    .filter(c -> {
+                        // Match by our Label OR by Port 8000
+                        boolean isOurs = c.getLabels() != null && ENGINE_LABEL_VALUE.equals(c.getLabels().get(ENGINE_LABEL_KEY));
+                        boolean isBlocking = java.util.Arrays.stream(c.getPorts())
+                                .anyMatch(p -> p.getPublicPort() != null && p.getPublicPort() == 8000);
+                        return isOurs || isBlocking;
+                    })
+                    .forEach(c -> {
+                        log.info("Killing stale container blocking start: {}", c.getId());
+                        try {
+                            // KILL is faster than STOP. We don't care about graceful exit for stale containers.
+                            dockerClient.killContainerCmd(c.getId()).exec();
+                            // We don't need removeContainerCmd because AutoRemove=true handles it.
+                        } catch (Exception ignored) {
+                        }
+                    });
+        } catch (Exception e) {
+            log.warn("Cleanup warning: {}", e.getMessage());
+        }
+    }
 
     private byte[] addWavHeader(byte[] pcmAudio) {
-        int totalDataLen = pcmAudio.length + 36;
-        byte[] header = new byte[44];
+        // 44 bytes for header + raw audio length
+        byte[] wavFile = new byte[44 + pcmAudio.length];
 
-        header[0] = 'R';
-        header[1] = 'I';
-        header[2] = 'F';
-        header[3] = 'F';
-        header[4] = (byte) (totalDataLen & 0xff);
-        header[5] = (byte) ((totalDataLen >> 8) & 0xff);
-        header[6] = (byte) ((totalDataLen >> 16) & 0xff);
-        header[7] = (byte) ((totalDataLen >> 24) & 0xff);
-        header[8] = 'W';
-        header[9] = 'A';
-        header[10] = 'V';
-        header[11] = 'E';
-        header[12] = 'f';
-        header[13] = 'm';
-        header[14] = 't';
-        header[15] = ' ';
-        header[16] = 16;
-        header[17] = 0;
-        header[18] = 0;
-        header[19] = 0;                                             // Subchunk1Size
-        header[20] = 1;
-        header[21] = 0;                                             // AudioFormat (PCM = 1)
-        header[22] = 1;
-        header[23] = 0;                                             // NumChannels (Mono = 1)
-        header[24] = (byte) (16000 & 0xff);                         // SampleRate (16000)
-        header[25] = (byte) ((16000 >> 8) & 0xff);
-        header[26] = (byte) ((16000 >> 16) & 0xff);
-        header[27] = (byte) ((16000 >> 24) & 0xff);
-        header[28] = (byte) (32000 & 0xff);                         // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
-        header[29] = (byte) ((32000 >> 8) & 0xff);
-        header[30] = (byte) ((32000 >> 16) & 0xff);
-        header[31] = (byte) ((32000 >> 24) & 0xff);
-        header[32] = 2;
-        header[33] = 0;                                             // BlockAlign
-        header[34] = 16;
-        header[35] = 0;                                             // BitsPerSample
-        header[36] = 'd';
-        header[37] = 'a';
-        header[38] = 't';
-        header[39] = 'a';
-        header[40] = (byte) (pcmAudio.length & 0xff);
-        header[41] = (byte) ((pcmAudio.length >> 8) & 0xff);
-        header[42] = (byte) ((pcmAudio.length >> 16) & 0xff);
-        header[43] = (byte) ((pcmAudio.length >> 24) & 0xff);
+        // Wrap the array in a ByteBuffer to handle the bits easily
+        ByteBuffer out = ByteBuffer.wrap(wavFile);
+        out.order(ByteOrder.LITTLE_ENDIAN); // WAV standard is Little Endian
 
-        byte[] wavFile = new byte[header.length + pcmAudio.length];
-        System.arraycopy(header, 0, wavFile, 0, header.length);
-        System.arraycopy(pcmAudio, 0, wavFile, header.length, pcmAudio.length);
+        // --- RIFF CHUNK ---
+        out.put(new byte[]{'R', 'I', 'F', 'F'});
+        out.putInt(36 + pcmAudio.length);         // Total file size - 8
+        out.put(new byte[]{'W', 'A', 'V', 'E'});
+
+        // --- FORMAT CHUNK ---
+        out.put(new byte[]{'f', 'm', 't', ' '});
+        out.putInt(16);                           // Size of format chunk (16 for PCM)
+        out.putShort((short) 1);                        // Audio Format (1 = PCM)
+        out.putShort((short) 1);                        // Channels (1 = Mono)
+        out.putInt(SAMPLE_RATE);                        // Sample Rate (e.g., 16000)
+        out.putInt(SAMPLE_RATE * 2);              // Byte Rate (Rate * Channels * BytesPerSample)
+        out.putShort((short) 2);                        // Block Align (Channels * BytesPerSample)
+        out.putShort((short) 16);                       // Bits Per Sample
+
+        // --- DATA CHUNK ---
+        out.put(new byte[]{'d', 'a', 't', 'a'});
+        out.putInt(pcmAudio.length);                    // Actual size of audio data
+
+        // Copy the raw audio into the rest of the array
+        System.arraycopy(pcmAudio, 0, wavFile, 44, pcmAudio.length);
+
         return wavFile;
     }
 
