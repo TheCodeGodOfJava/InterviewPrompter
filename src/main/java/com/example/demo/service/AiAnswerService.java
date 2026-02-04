@@ -18,22 +18,25 @@ public class AiAnswerService {
 
     // Use a thread-safe reference to store the last response
     private final AtomicReference<String> lastAnswer = new AtomicReference<>("Waiting for analysis...");
+    private final AtomicReference<Boolean> isAiProcessing = new AtomicReference<>(false);
 
     public void processSpeechWithAI(String transcript) {
-        if (transcript.length() < 10) return;
+        if (isAiProcessing.get()) return;    // Don't send a new request if the GPU is still thinking
 
         Thread.ofVirtual().start(() -> {
-            try {
-                String systemPrompt = "You are a helpful assistant. Provide a very concise response in Ukrainian to this speech segment:";
-                String response = chatModel.call(systemPrompt + " " + transcript);
+            if (isAiProcessing.compareAndSet(false, true)) { // Lock
+                try {
+                    log.info("GPU starting inference for: {}", transcript);
+                    String systemPrompt = "You are a helpful assistant. Provide a very concise response in Ukrainian:";
+                    String response = chatModel.call(systemPrompt + " " + transcript);
 
-                // Store it for REST requests
-                lastAnswer.set(response);
-
-                // Push it for WebSocket subscribers
-                messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(response));
-            } catch (Exception e) {
-                log.error("Ollama AI processing failed", e);
+                    lastAnswer.set(response);
+                    messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(response));
+                } catch (Exception e) {
+                    log.error("Ollama AI processing failed: {}", e.getMessage());
+                } finally {
+                    isAiProcessing.set(false); // Unlock
+                }
             }
         });
     }

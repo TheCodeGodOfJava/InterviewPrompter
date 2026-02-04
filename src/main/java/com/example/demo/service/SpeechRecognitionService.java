@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static com.example.demo.service.engine.SpeechRecognizerEngine.SAMPLE_RATE;
 
@@ -120,18 +121,26 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         return new ProcessBuilder(command);
     }
 
+    // inside SpeechRecognitionService.java
+
     private void runRecognition(InputStream audioStream) {
         byte[] buffer = new byte[4096];
+
+        // 1. Define what happens when text is recognized (The Callback)
+        Consumer<String> onTextRecognized = (text) -> {
+            if (text != null && !text.isBlank()) {
+                log.info("Async Result: {}", text);
+                liveTranscriptService.appendWord(text);
+                aiAnswerService.processSpeechWithAI(liveTranscriptService.getCurrentText());
+            }
+        };
+
         try {
             int read;
+            // 2. The loop just pumps audio. It NEVER waits.
             while (!Thread.currentThread().isInterrupted() && (read = audioStream.read(buffer)) != -1) {
-                String result = currentEngine.processAudio(buffer, read);
-
-                if (result != null && !result.isBlank()) {
-                    log.info("Recognized: {}", result);
-                    liveTranscriptService.appendWord(result);
-                    aiAnswerService.processSpeechWithAI(liveTranscriptService.getCurrentText());
-                }
+                // We pass the callback into the engine
+                currentEngine.processAudio(buffer, read, onTextRecognized);
             }
         } catch (Exception e) {
             log.error("Recognition failed", e);

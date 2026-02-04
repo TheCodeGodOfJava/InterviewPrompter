@@ -40,7 +40,7 @@ public class WhisperEngine implements SpeechRecognizerEngine {
 
     private static final int BYTES_PER_SECOND = SAMPLE_RATE * 2; // 16bit = 2 bytes
     private static final int WINDOW_SIZE = BYTES_PER_SECOND * 3;
-    private static final String MODEL_NAME = "Systran/faster-whisper-large-v3";
+    private static final String MODEL_NAME = "Systran/faster-whisper-medium";
 
     private static final String ENGINE_LABEL_KEY = "managed-by";
     private static final String ENGINE_LABEL_VALUE = "interview-prompter-whisper";
@@ -203,15 +203,22 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     }
 
     @Override
-    public String processAudio(byte[] data, int read) {
+    public void processAudio(byte[] data, int read, java.util.function.Consumer<String> onResult) {
         buffer.write(data, 0, read);
+
         if (buffer.size() >= WINDOW_SIZE) {
             byte[] audioPayload = buffer.toByteArray();
             buffer.reset();
-            log.info("Processing speech (Zen 5 AVX-512)...");
-            return transcribe(audioPayload);
+
+            // 3. DO NOT BLOCK. Run in background immediately.
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                String text = transcribe(audioPayload); // This takes 1-10 seconds
+                // 4. Trigger the callback when done
+                if (text != null && !text.isBlank()) {
+                    onResult.accept(text);
+                }
+            });
         }
-        return null;
     }
 
     private String transcribe(byte[] audio) {
@@ -342,10 +349,14 @@ public class WhisperEngine implements SpeechRecognizerEngine {
                         "COMPUTE_TYPE=int8",
                         "INFERENCE_DEVICE=cpu",
                         "THREADS=8",
+                        "OMP_NUM_THREADS=4",
                         "VAD_FILTER=true",
-                        "BEAM_SIZE=5",
-                        "TEMPERATURE=0"
-                        // "HUGGING_FACE_HUB_TOKEN=your_token" if needed for gated models
+                        "BEAM_SIZE=1",
+                        "TEMPERATURE=0",
+                        // ANTI-HALLUCINATION SETTINGS (Supported by Speaches/Faster-Whisper)
+                        // Prevents the model from getting stuck in a loop
+                        "REPETITION_PENALTY=1.1",
+                        "CONDITION_ON_PREVIOUS_TEXT=false" // Critical for voice commands to prevent context bleeding
                 )
                 .withHostConfig(HostConfig.newHostConfig()
                         .withPortBindings(portBindings)

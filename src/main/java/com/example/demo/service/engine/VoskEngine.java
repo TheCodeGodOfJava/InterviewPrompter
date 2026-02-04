@@ -8,26 +8,41 @@ import org.vosk.Model;
 import org.vosk.Recognizer;
 
 import java.io.IOException;
+import java.util.function.Consumer;
 
 @Slf4j
 public class VoskEngine implements SpeechRecognizerEngine {
     private final Recognizer recognizer;
     private final ObjectMapper objectMapper;
 
+    // Vosk needs a smaller buffer than Whisper, usually 4096 is fine.
+    // Ensure this matches what you send from the Service.
+
     public VoskEngine(ModelManagerService modelManagerService, ObjectMapper objectMapper) throws IOException {
         modelManagerService.checkAndDownloadModels();
+        // Ensure path matches your actual file structure
         Model model = new Model("sound/vosk-model-uk-v3");
         this.recognizer = new Recognizer(model, SAMPLE_RATE);
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Updated to match the new Interface signature.
+     * Note: Vosk is fast, so we run it synchronously here.
+     * We do NOT use CompletableFuture because Vosk requires strict sequential ordering of bytes.
+     */
     @Override
-    public String processAudio(byte[] buffer, int bytesRead) {
+    public void processAudio(byte[] buffer, int bytesRead, Consumer<String> onResult) {
+        // acceptWaveForm returns true if a silence/pause was detected and a full sentence is ready
         if (recognizer.acceptWaveForm(buffer, bytesRead)) {
             String rawJson = recognizer.getResult();
-            return extractText(rawJson);
+            String text = extractText(rawJson);
+
+            // Invoke the callback immediately
+            if (!text.isBlank()) {
+                onResult.accept(text);
+            }
         }
-        return null;
     }
 
     private String extractText(String json) {
@@ -39,10 +54,11 @@ public class VoskEngine implements SpeechRecognizerEngine {
              */
             byte[] bytes = json.getBytes(java.nio.charset.Charset.forName("Windows-1251"));
             String fixedJson = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+
             VoskResult result = objectMapper.readValue(fixedJson, VoskResult.class);
-            return result.text() != null ? result.text() : result.partial();
+            return result.text() != null ? result.text() : "";
         } catch (Exception e) {
-            // Fallback to original if fix fails
+            // Fallback logic
             try {
                 VoskResult result = objectMapper.readValue(json, VoskResult.class);
                 return result.text() != null ? result.text() : "";
