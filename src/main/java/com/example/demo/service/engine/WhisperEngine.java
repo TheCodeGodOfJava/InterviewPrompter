@@ -26,6 +26,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 @Slf4j
 public class WhisperEngine implements SpeechRecognizerEngine {
@@ -33,13 +36,19 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     private final ObjectMapper objectMapper;
 
     private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-    private final HttpClient client = HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_1_1) // Force HTTP/1.1
-            .connectTimeout(Duration.ofSeconds(2))
-            .build();
+    private final HttpClient client;
 
-    private static final int BYTES_PER_SECOND = SAMPLE_RATE * 2; // 16bit = 2 bytes
-    private static final int WINDOW_SIZE = BYTES_PER_SECOND * 3;
+    // The volume level (Root Mean Square) required to trigger recording.
+    // 400 is a good baseline. Increase to 800 if you have background noise.
+    private static final int SILENCE_THRESHOLD_RMS = 400;
+
+    // How long (in ms) we must hear silence before we assume the user stopped speaking.
+    // 600ms is a natural conversational pause.
+    private static final int PAUSE_BEFORE_SEND_MS = 600;
+
+    // Minimum audio length. If audio is shorter than this (e.g., a keyboard click), ignore it.
+    // This is the #1 defense against "Hallucinations".
+    private static final int MIN_PHRASE_DURATION_MS = 800;
     private static final String MODEL_NAME = "Systran/faster-whisper-medium";
 
     private static final String ENGINE_LABEL_KEY = "managed-by";
@@ -48,8 +57,25 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     private final DockerClient dockerClient;
     private String containerId;
 
+    // --- NEW: STATE MANAGEMENT ---
+    // Replacing the fixed buffer logic with dynamic state
+    private final ByteArrayOutputStream audioBuffer = new ByteArrayOutputStream();
+
+    // Is the engine currently capturing a sentence?
+    private boolean isCollectingSpeech = false;
+
+    // The timestamp (ms) of the last time we heard a human voice
+    private long lastVoiceActivityTime = System.currentTimeMillis();
+
+    // Thread-safe shutdown flag (Replaces 'volatile Boolean engineRunning')
+    private final AtomicBoolean isClosed = new AtomicBoolean(false);
+
 
     public WhisperEngine(ObjectMapper objectMapper) {
+        client = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1) // Force HTTP/1.1
+                .connectTimeout(Duration.ofSeconds(2))
+                .build();
         this.objectMapper = objectMapper;
         this.dockerClient = createDockerClient();
     }
@@ -78,8 +104,7 @@ public class WhisperEngine implements SpeechRecognizerEngine {
 
                 HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-                // The engine returns a JSON list of models.
-                // We only proceed if our model is present in that list.
+                // We only proceed if our model is present in the list of models.
                 if (response.statusCode() == 200 && response.body().contains(MODEL_NAME)) {
                     log.info("SUCCESS: Model {} is verified and ready for inference!", MODEL_NAME);
                     return;
@@ -94,6 +119,7 @@ public class WhisperEngine implements SpeechRecognizerEngine {
                 Thread.sleep(5000);
             } catch (Exception e) {
                 attempts++;
+                log.info("Next attempt: {} ", attempts);
             }
         }
         throw new RuntimeException("Model failed to load. Check internet connection or disk space.");
@@ -157,7 +183,7 @@ public class WhisperEngine implements SpeechRecognizerEngine {
             // Try to inspect the image - if this fails, we need to pull it
             dockerClient.inspectImageCmd(imageName).exec();
             log.info("Image {} found locally.", imageName);
-        } catch (com.github.dockerjava.api.exception.NotFoundException e) {
+        } catch (NotFoundException e) {
             log.info("Image not found. Pulling {} (This will take a few minutes, it could be several GBs)...", imageName);
             try {
                 dockerClient.pullImageCmd(imageName).start().awaitCompletion(); // <--- CRITICAL: Do not continue until download is 100%
@@ -170,7 +196,7 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     }
 
     private void waitForHealth() {
-        log.info("Waiting for Whisper model to load into CPU RAM...");
+        log.info("Waiting for Whisper model to load into RAM...");
         boolean isReady = false;
         int attempts = 0;
 
@@ -181,13 +207,12 @@ public class WhisperEngine implements SpeechRecognizerEngine {
                 conn.setConnectTimeout(1000);
                 if (conn.getResponseCode() == 200) {
                     isReady = true;
-                } else {
-                    attempts++;
                 }
             } catch (Exception e) {
+                log.info("Could not connect to Whisper model");
+            } finally {
                 attempts++;
             }
-
             if (!isReady) {
                 try {
                     Thread.sleep(300);
@@ -197,28 +222,88 @@ public class WhisperEngine implements SpeechRecognizerEngine {
                 }
             }
         }
-
         if (!isReady) throw new RuntimeException("Whisper CPU service failed to start!");
         log.info("Whisper is ready on your CPU!");
     }
 
     @Override
-    public void processAudio(byte[] data, int read, java.util.function.Consumer<String> onResult) {
-        buffer.write(data, 0, read);
+    public void processAudio(byte[] data, int read, Consumer<String> onResult) {
+        // 1. Safety Check: Don't process if engine is shutting down
+        if (isClosed.get()) return;
 
-        if (buffer.size() >= WINDOW_SIZE) {
-            byte[] audioPayload = buffer.toByteArray();
-            buffer.reset();
+        // 2. Analyze Signal Energy
+        double currentRms = calculateRMS(data, read);
+        long now = System.currentTimeMillis();
 
-            // 3. DO NOT BLOCK. Run in background immediately.
-            java.util.concurrent.CompletableFuture.runAsync(() -> {
-                String text = transcribe(audioPayload); // This takes 1-10 seconds
-                // 4. Trigger the callback when done
+        if (currentRms > SILENCE_THRESHOLD_RMS) {
+            // --- STATE: SPEAKING ---
+            // The user is actively talking.
+            lastVoiceActivityTime = now;
+
+            if (!isCollectingSpeech) {
+                log.debug(">> Speech Detected (RMS: {})", (int) currentRms);
+                isCollectingSpeech = true;
+            }
+
+            // Always save data while speaking
+            audioBuffer.write(data, 0, read);
+
+        } else {
+            // --- STATE: SILENCE ---
+            if (isCollectingSpeech) {
+                // We were speaking, but now it is quiet.
+                // We keep recording briefly to capture the "tail" of the word.
+                audioBuffer.write(data, 0, read);
+
+                // Check: Has the silence lasted long enough to mark the sentence as "Finished"?
+                long silenceDuration = now - lastVoiceActivityTime;
+
+                if (silenceDuration > PAUSE_BEFORE_SEND_MS) {
+                    // Logic Gate: The sentence is officially over.
+                    finalizeAndSend(onResult);
+                }
+            }
+        }
+    }
+
+    private void finalizeAndSend(Consumer<String> onResult) {
+        byte[] payload = audioBuffer.toByteArray();
+
+        // Reset state immediately so we are ready for the next sentence
+        audioBuffer.reset();
+        isCollectingSpeech = false;
+
+        // --- MATH: Calculate Audio Duration ---
+        // 16000 Hz * 16-bit (2 bytes) = 32,000 bytes per second
+        double durationMs = (payload.length / 32000.0) * 1000;
+
+        // --- FILTER: Anti-Hallucination Guard ---
+        if (durationMs < MIN_PHRASE_DURATION_MS) {
+            log.debug("Dropped short noise ({}ms) - Ignored.", (int) durationMs);
+            return;
+        }
+
+        log.info("Sentence captured ({}ms). Sending to AI...", (int) durationMs);
+
+        // Proceed to Step 3
+        dispatchToAi(payload, onResult);
+    }
+
+    private void dispatchToAi(byte[] payload, Consumer<String> onResult) {
+        // Fire and Forget (Non-blocking)
+        CompletableFuture.runAsync(() -> {
+            try {
+                // This blocks the WORKER thread, not the AUDIO thread
+                String text = transcribe(payload);
+
                 if (text != null && !text.isBlank()) {
+                    log.info(">> AI Recognized: [{}]", text);
                     onResult.accept(text);
                 }
-            });
-        }
+            } catch (Exception e) {
+                log.error("Async transcription error", e);
+            }
+        });
     }
 
     private String transcribe(byte[] audio) {
@@ -289,11 +374,21 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     }
 
     private void warmUpModel() {
-        log.info("Warming up Whisper model...");
-        byte[] warmup = new byte[WINDOW_SIZE];
-        warmup[0] = 1; // force non-zero audio
-        transcribe(warmup);
-        log.info("Whisper model warmed up.");
+        log.info("Warming up Whisper model (forcing RAM allocation)...");
+
+        byte[] warmupPayload = new byte[SAMPLE_RATE * 2];
+
+        // We leave the array as all zeros (Silence).
+        // Whisper handles pure silence fine for a warmup; it just returns empty text.
+
+        try {
+            // We call transcribe() directly (blocking), not dispatchToAi()
+            // We want the app to WAIT here until the model is ready.
+            String result = transcribe(warmupPayload);
+            log.info("Whisper model is WARM. Init result: [{}]", result);
+        } catch (Exception e) {
+            log.warn("Warmup warning: Model might still be loading. {}", e.getMessage());
+        }
     }
 
     private String startContainer() {
@@ -424,34 +519,64 @@ public class WhisperEngine implements SpeechRecognizerEngine {
         return wavFile;
     }
 
+    /**
+     * Calculates the "Loudness" (Root Mean Square) of a PCM audio chunk.
+     * 16-bit audio is stored as 2 bytes per sample.
+     */
+    private double calculateRMS(byte[] rawData, int read) {
+        long sum = 0;
+
+        // Iterate 2 bytes at a time (16-bit samples)
+        for (int i = 0; i < read; i += 2) {
+            if (i + 1 >= read) break;
+
+            // Convert low-byte and high-byte to a number
+            // Little Endian: Low byte first, then High byte shifted 8 bits
+            short sample = (short) ((rawData[i] & 0xFF) | (rawData[i + 1] << 8));
+
+            // Add square of the sample to sum
+            sum += sample * sample;
+        }
+
+        // Calculate average energy
+        int sampleCount = read / 2;
+        if (sampleCount == 0) return 0;
+
+        return Math.sqrt(sum / (double) sampleCount);
+    }
+
     @PreDestroy
     @Override
-    public void close() {
-        log.info("Closing WhisperEngine and releasing CPU resources...");
+    public synchronized void close() {
+        if (!isClosed.get()) {
+            log.info("Closing WhisperEngine and releasing CPU resources...");
 
-        // 1. Close local resources
-        try {
-            buffer.close();
-        } catch (Exception e) {
-            log.warn("Failed to close audio buffer", e);
-        }
-
-        // 2. Stop Docker container (auto-remove will handle deletion)
-        if (containerId != null) {
+            // 1. Close local resources
             try {
-                log.info("Stopping Whisper container: {}", containerId);
-                dockerClient.stopContainerCmd(containerId).withTimeout(5).exec();
-                log.info("Whisper container stopped (auto-removed by Docker)");
-            } catch (NotFoundException ignored) {
-                log.debug("Whisper container already removed");
+                buffer.close();
             } catch (Exception e) {
-                log.warn("Failed to stop Whisper container!");
+                log.warn("Failed to close audio buffer", e);
             }
-        }
-        try {
-            dockerClient.close();
-        } catch (Exception e) {
-            log.debug("Docker client already closed");
+
+            // 2. Stop Docker container (auto-remove will handle deletion)
+            if (containerId != null) {
+                try {
+                    log.info("Stopping Whisper container: {}", containerId);
+                    dockerClient.stopContainerCmd(containerId).withTimeout(5).exec();
+
+                    log.info("Whisper container stopped (auto-removed by Docker)");
+                } catch (NotFoundException ignored) {
+                    log.debug("Whisper container already removed");
+                } catch (Exception e) {
+                    log.warn("Failed to stop Whisper container!");
+                }
+            }
+            try {
+                dockerClient.close();
+            } catch (Exception e) {
+                log.debug("Docker client already closed");
+            }
+            this.isClosed.set(true);
         }
     }
 }
