@@ -40,10 +40,6 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
     private final HttpClient client;
 
-    // The volume level (Root Mean Square) required to trigger recording.
-    // 400 is a good baseline. Increase to 800 if you have background noise.
-    private static final int SILENCE_THRESHOLD_RMS = 400;
-
     // How long (in ms) we must hear silence before we assume the user stopped speaking.
     // 600ms is a natural conversational pause.
     private static final int PAUSE_BEFORE_SEND_MS = 600;
@@ -51,7 +47,7 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     // Minimum audio length. If audio is shorter than this (e.g., a keyboard click), ignore it.
     // This is the #1 defense against "Hallucinations".
     private static final int MIN_PHRASE_DURATION_MS = 800;
-    private static final String MODEL_NAME = "Systran/faster-whisper-medium";
+    private static final String MODEL_NAME = "Systran/faster-whisper-small";
 
     private static final String ENGINE_LABEL_KEY = "managed-by";
     private static final String ENGINE_LABEL_VALUE = "interview-prompter-whisper";
@@ -72,6 +68,11 @@ public class WhisperEngine implements SpeechRecognizerEngine {
     // Thread-safe shutdown flag (Replaces 'volatile Boolean engineRunning')
     private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
+    private long lastRmsLogTime = 0;
+
+    // Default to a safe middle ground
+    private volatile int silenceThreshold = 250;
+
 
     public WhisperEngine(ObjectMapper objectMapper) {
         client = HttpClient.newBuilder()
@@ -89,6 +90,11 @@ public class WhisperEngine implements SpeechRecognizerEngine {
         waitForHealth();
         ensureModelDownloaded();
         warmUpModel();
+    }
+
+    @Override
+    public void setSilenceThreshold(int threshold) {
+        this.silenceThreshold = threshold;
     }
 
     private void ensureModelDownloaded() {
@@ -237,7 +243,17 @@ public class WhisperEngine implements SpeechRecognizerEngine {
         double currentRms = calculateRMS(data, read);
         long now = System.currentTimeMillis();
 
-        if (currentRms > SILENCE_THRESHOLD_RMS) {
+        // --- NEW: CALIBRATION LOGGING (Throttled) ---
+        // Prints current volume vs threshold every 500ms
+        if (now - lastRmsLogTime > 1000) {
+            String status = currentRms > silenceThreshold ? "SPEAKING" : "SILENCE";
+            log.info("[Audio Calibration] RMS: {} | Threshold: {} | Status: {}",
+                    (int) currentRms, silenceThreshold, status);
+            lastRmsLogTime = now;
+        }
+        // --------------------------------------------
+
+        if (currentRms > silenceThreshold) {
             // --- STATE: SPEAKING ---
             // The user is actively talking.
             lastVoiceActivityTime = now;
@@ -316,6 +332,9 @@ public class WhisperEngine implements SpeechRecognizerEngine {
             // 3. LOGGING: Use DEBUG for heavy payloads. Keep INFO clean.
             log.debug("Dispatching {} bytes to Whisper...", multipartBody.length);
 
+            // --- TIMER START ---
+            final long startTime = System.currentTimeMillis();
+
             // 4. ASYNC I/O: This is the magic.
             // It returns immediately. The HTTP Client handles the socket in the background.
             return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
@@ -329,7 +348,8 @@ public class WhisperEngine implements SpeechRecognizerEngine {
                             // Fast parsing
                             JsonNode node = objectMapper.readTree(response.body());
                             String text = node.path("text").asText("").trim();
-                            log.info(">> AI Recognized: [{}]", text);
+                            long duration = System.currentTimeMillis() - startTime;
+                            log.info(">> Speech recognized in {}ms: [{}]", duration, text);
                             return text;
                         } catch (Exception e) {
                             log.error("JSON Parsing Failed", e);
@@ -432,7 +452,7 @@ public class WhisperEngine implements SpeechRecognizerEngine {
                         "PRELOAD_MODELS=[\"" + MODEL_NAME + "\"]",
                         "COMPUTE_TYPE=int8",
                         "INFERENCE_DEVICE=cpu",
-                        "THREADS=8",
+//                        "THREADS=8",
                         "OMP_NUM_THREADS=4",
                         "VAD_FILTER=true",
                         "BEAM_SIZE=1",

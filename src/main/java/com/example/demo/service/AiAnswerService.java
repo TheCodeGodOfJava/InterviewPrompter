@@ -26,10 +26,13 @@ public class AiAnswerService {
         Thread.ofVirtual().start(() -> {
             if (isAiProcessing.compareAndSet(false, true)) { // Lock
                 try {
-                    log.info("GPU starting inference for: {}", transcript);
+                    log.info("CPU starting inference for: {}", transcript);
+                    // --- TIMER START ---
+                    long startTime = System.currentTimeMillis();
                     String systemPrompt = "You are a helpful assistant. Provide a very concise response in Ukrainian:";
                     String response = chatModel.call(systemPrompt + " " + transcript);
-
+                    long duration = System.currentTimeMillis() - startTime;
+                    log.info(">> AI Answered in {}ms: [{}]", duration, response);
                     lastAnswer.set(response);
                     messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(response));
                 } catch (Exception e) {

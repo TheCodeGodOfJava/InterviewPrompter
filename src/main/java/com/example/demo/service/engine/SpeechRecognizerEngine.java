@@ -8,5 +8,9 @@ public interface SpeechRecognizerEngine {
 
     void processAudio(byte[] buffer, int bytesRead, Consumer<String> onResult);
 
+    default void setSilenceThreshold(int threshold) {
+        System.out.println("Setting silence threshold to " + threshold);
+    }
+
     void close();
 }

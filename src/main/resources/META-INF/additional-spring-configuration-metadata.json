@@ -4,5 +4,10 @@
       "name": "speech.engine",
       "type": "java.lang.String",
       "description": "Description for speech.engine."
+    },
+    {
+      "name": "speech.source",
+      "type": "java.lang.String",
+      "description": "Description for speech.source."
     }
   ] }

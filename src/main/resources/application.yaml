@@ -1,5 +1,6 @@
 speech:
   engine: "whisper"
+  source: "MICROPHONE" # Options: MICROPHONE, STEREO_MIX
 spring:
   ai:
     ollama:

@@ -6,6 +6,7 @@ import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
@@ -23,7 +24,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
     private boolean isRunning = false;
 
     @Getter
-    private volatile SOURCE source = SOURCE.STEREO_MIX;
+    private volatile SOURCE source;
     private final AiAnswerService aiAnswerService;
     private final LiveTranscriptService liveTranscriptService;
 
@@ -31,10 +32,18 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
     private Thread recognitionThread;
 
     // Constructor remains the same (loads model)
-    public SpeechRecognitionService(LiveTranscriptService liveTranscriptService, AiAnswerService aiAnswerService, SpeechRecognizerEngine currentEngine) {
+    public SpeechRecognitionService(LiveTranscriptService liveTranscriptService, AiAnswerService aiAnswerService, SpeechRecognizerEngine currentEngine, @Value("${speech.source:MICROPHONE}") String defaultSource) {
         this.aiAnswerService = aiAnswerService;
         this.liveTranscriptService = liveTranscriptService;
         this.currentEngine = currentEngine;
+        // Parse YML string to Enum safely
+        try {
+            this.source = SOURCE.valueOf(defaultSource.toUpperCase());
+            log.info("Initialized Audio Source from Config: {}", this.source);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid speech.source '{}' in YML. Fallback to MICROPHONE.", defaultSource);
+            this.source = SOURCE.MICROPHONE;
+        }
     }
 
     public void setEngine(SpeechRecognizerEngine engine) {
@@ -77,6 +86,10 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
             log.warn("Recognition already running");
             this.shutdownSource(); // safety net
         }
+
+        // --- FIX: ALWAYS APPLY THRESHOLD BEFORE STARTING ---
+        log.info("Applying silence threshold: {} for source: {}", source.getThreshold(), source);
+        currentEngine.setSilenceThreshold(source.getThreshold());
 
         ProcessBuilder pb = getProcessBuilder();
 
