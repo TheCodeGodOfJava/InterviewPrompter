@@ -1,4 +1,4 @@
-package com.example.demo.service;
+package com.example.demo.service.engine.vosk;
 
 
 import org.springframework.stereotype.Service;
@@ -16,7 +16,7 @@ import java.util.zip.ZipInputStream;
 
 
 @Service
-public class ModelManagerService {
+public class VoskModelManagerService {
 
     //here we can add new language models
     //"small" models may be to shallow for your tasks, but "full" models can be more than 1Gb

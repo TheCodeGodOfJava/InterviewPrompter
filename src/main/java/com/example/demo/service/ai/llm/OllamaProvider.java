@@ -1,8 +1,10 @@
-// src/main/java/com/example/demo/service/OllamaManagerService.java
-package com.example.demo.service;
+package com.example.demo.service.ai.llm;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -14,12 +16,26 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-public class AiManagerService implements SmartInitializingSingleton {
+@RequiredArgsConstructor
+@ConditionalOnProperty(name = "ai.provider", havingValue = "ollama", matchIfMissing = true)
+public class OllamaProvider implements LlmProvider, SmartInitializingSingleton {
+
+    private final ChatModel chatModel;
 
     private static final String OLLAMA_API_URL = "http://localhost:11434/api/tags";
     private static final long STARTUP_TIMEOUT_SECONDS = 15;
 
-    public void initializeOllama() {
+    // --- STRATEGY IMPLEMENTATION ---
+    @Override
+    public String generateAnswer(String systemPrompt, String userPrompt) {
+        log.debug("Ollama generating answer...");
+        // Usually Spring AI handles connection errors, but strictly speaking
+        // we might want to ensure it's running before calling.
+        // For now, we assume initializeOllama() did its job.
+        return chatModel.call(systemPrompt + " " + userPrompt);
+    }
+
+    private void initializeOllama() {
         if (isOllamaRunning()) {
             log.info("Ollama is already running and accessible on port 11434");
             return;
@@ -122,4 +138,5 @@ public class AiManagerService implements SmartInitializingSingleton {
     public void afterSingletonsInstantiated() {
         initializeOllama();
     }
+
 }

@@ -1,7 +1,11 @@
 speech:
   engine: "whisper"
   source: "MICROPHONE" # Options: MICROPHONE, STEREO_MIX
+ai:
+  provider: "ollama"
 spring:
+  config:
+    import: "optional:classpath:secrets.yml"
   ai:
     ollama:
       chat:

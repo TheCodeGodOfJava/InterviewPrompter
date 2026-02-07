@@ -1,9 +1,11 @@
-package com.example.demo.service.engine;
+package com.example.demo.service.engine.vosk;
 
 import com.example.demo.model.VoskResult;
-import com.example.demo.service.ModelManagerService;
+import com.example.demo.service.engine.SpeechRecognizerEngine;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
 import org.vosk.Model;
 import org.vosk.Recognizer;
 
@@ -11,6 +13,8 @@ import java.io.IOException;
 import java.util.function.Consumer;
 
 @Slf4j
+@Service
+@ConditionalOnProperty(name = "speech.engine", havingValue = "vosk", matchIfMissing = true)
 public class VoskEngine implements SpeechRecognizerEngine {
     private final Recognizer recognizer;
     private final ObjectMapper objectMapper;
@@ -18,7 +22,7 @@ public class VoskEngine implements SpeechRecognizerEngine {
     // Vosk needs a smaller buffer than Whisper, usually 4096 is fine.
     // Ensure this matches what you send from the Service.
 
-    public VoskEngine(ModelManagerService modelManagerService, ObjectMapper objectMapper) throws IOException {
+    public VoskEngine(VoskModelManagerService modelManagerService, ObjectMapper objectMapper) throws IOException {
         modelManagerService.checkAndDownloadModels();
         // Ensure path matches your actual file structure
         Model model = new Model("sound/vosk-model-uk-v3");

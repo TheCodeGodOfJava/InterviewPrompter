@@ -39,3 +39,4 @@ out/
 
 /sound/
 /logs/
+/src/main/resources/secrets.yml

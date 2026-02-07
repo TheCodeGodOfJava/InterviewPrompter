@@ -1,7 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.model.AiUpdate;
-import com.example.demo.service.AiAnswerService;
+import com.example.demo.service.ai.AiAnswerService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.web.bind.annotation.GetMapping;

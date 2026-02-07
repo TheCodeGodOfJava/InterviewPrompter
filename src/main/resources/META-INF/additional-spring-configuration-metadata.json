@@ -9,5 +9,10 @@
       "name": "speech.source",
       "type": "java.lang.String",
       "description": "Description for speech.source."
+    },
+    {
+      "name": "ai.provider",
+      "type": "java.lang.String",
+      "description": "Description for ai.provider."
     }
   ] }
