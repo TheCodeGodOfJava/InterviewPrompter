@@ -16,30 +16,33 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 /**
- * GROK LLM PROVIDER
- * Responsibility: Sends text to xAI and gets a witty response.
+ * GROQ LLM PROVIDER
+ * Responsibility: Sends text to Groq and gets a witty response.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "ai.provider", havingValue = "grok")
-public class GrokLlmProvider implements LlmProvider {
+@ConditionalOnProperty(name = "ai.provider", havingValue = "")
+public class GroqLlmProvider implements LlmProvider {
 
     private final ObjectMapper mapper;
 
     // Create one client to reuse
     private final HttpClient client = HttpClient.newHttpClient();
 
-    private static final String LLM_URL = "https://api.x.ai/v1/chat/completions";
-    private static final String LLM_MODEL = "grok-beta";
+    // 1. URL for Groq
+    private static final String LLM_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-    @Value("${grok.api.key}")
+    // 2. Model hosted on Groq (Free)
+    private static final String LLM_MODEL = "llama-3.3-70b-versatile";
+
+    @Value("${groq.api.key}")
     private String apiKey;
 
     @Override
     public String generateAnswer(String systemPrompt, String userPrompt) {
         try {
-            log.info("Sending prompt to Grok...");
+            log.info("Sending prompt to Groq (Llama 3)...");
 
             ObjectNode payload = mapper.createObjectNode();
             payload.put("model", LLM_MODEL);
@@ -62,15 +65,15 @@ public class GrokLlmProvider implements LlmProvider {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                log.error("xAI Error {}: {}", response.statusCode(), response.body());
-                return "I am sorry, my brain is offline.";
+                log.error("Groq API Error {}: {}", response.statusCode(), response.body());
+                return "I am sorry, Groq is offline.";
             }
 
             JsonNode root = mapper.readTree(response.body());
             return root.path("choices").get(0).path("message").path("content").asText();
 
         } catch (Exception e) {
-            log.error("xAI Exception", e);
+            log.error("Groq Exception", e);
             return "Error processing request.";
         }
     }

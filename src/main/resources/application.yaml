@@ -1,8 +1,8 @@
 speech:
-  engine: "whisper"
+  engine: "groq"
   source: "MICROPHONE" # Options: MICROPHONE, STEREO_MIX
 ai:
-  provider: "ollama"
+  provider: "groq"
 spring:
   config:
     import: "optional:classpath:secrets.yml"

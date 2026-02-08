@@ -99,7 +99,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         ffmpegProcess = pb.start();
         InputStream audioStream = ffmpegProcess.getInputStream();
 
-        recognitionThread = new Thread(() -> runRecognition(audioStream), "Vosk-Recognition-" + source.name());
+        recognitionThread = new Thread(() -> runRecognition(audioStream), "Recognition-" + source.name());
         recognitionThread.setDaemon(true);  // ← Good: JVM won't wait for daemon thread on exit
         recognitionThread.start();
 
