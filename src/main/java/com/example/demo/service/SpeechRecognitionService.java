@@ -2,6 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.model.SOURCE;
 import com.example.demo.service.ai.AiAnswerService;
+import com.example.demo.service.ai.AiContextService;
 import com.example.demo.service.engine.SpeechRecognizerEngine;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
@@ -27,15 +28,15 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
     @Getter
     private volatile SOURCE source;
     private final AiAnswerService aiAnswerService;
-    private final LiveTranscriptService liveTranscriptService;
+    private final AiContextService aiContextService;
 
     private Process ffmpegProcess;
     private Thread recognitionThread;
 
     // Constructor remains the same (loads model)
-    public SpeechRecognitionService(LiveTranscriptService liveTranscriptService, AiAnswerService aiAnswerService, SpeechRecognizerEngine currentEngine, @Value("${speech.source:MICROPHONE}") String defaultSource) {
+    public SpeechRecognitionService(AiContextService aiContextService, AiAnswerService aiAnswerService, SpeechRecognizerEngine currentEngine, @Value("${speech.source:MICROPHONE}") String defaultSource) {
         this.aiAnswerService = aiAnswerService;
-        this.liveTranscriptService = liveTranscriptService;
+        this.aiContextService = aiContextService;
         this.currentEngine = currentEngine;
         // Parse YML string to Enum safely
         try {
@@ -144,8 +145,13 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         Consumer<String> onTextRecognized = (text) -> {
             if (text != null && !text.isBlank()) {
                 log.info("Async Result: {}", text);
-                liveTranscriptService.appendWord(text);
-                aiAnswerService.processSpeechWithAI(liveTranscriptService.getCurrentText());
+                // STEP 1: Add what the user said to the Chat History
+                aiContextService.addMessage("user", text); // CHANGED
+
+                // STEP 2: Ask AI to answer (it will pull history internally)
+                // We pass the text just for logging/triggering,
+                // but the service actually uses the full list.
+                aiAnswerService.processSpeechWithAI(text);
             }
         };
 

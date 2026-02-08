@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -49,34 +48,25 @@ public class GroqSstEngine extends AbstractSpeechEngine {
     private CompletableFuture<String> sendAudioToCloud(byte[] wavData) {
         String boundary = "Boundary-" + UUID.randomUUID();
 
-        // Whisper-large-v3-turbo is fast and accurate on Groq
-        Map<String, String> params = Map.of(
-                "model", "whisper-large-v3-turbo",
-                "language", "uk",
-                // The prompt mixes alphabets to teach the model the "Code-Switching" style
-                "prompt", "Це технічна розмова про Java, Spring Boot, Hibernate, Object Oriented Programming, Angular, JavaScript та інші технічні питання."
-        );
+        Map<String, String> params = Map.of("model", "whisper-large-v3-turbo", "language", "uk");
+
+
         byte[] body = buildMultipartBody(wavData, boundary, params);
 
-        HttpRequest request = newRequest(STT_URL)
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
+        HttpRequest request = newRequest(STT_URL).header("Authorization", "Bearer " + apiKey).header("Content-Type", "multipart/form-data; boundary=" + boundary).POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
 
-        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(response -> {
-                    if (response.statusCode() != 200) {
-                        log.error("Groq STT Error {}: {}", response.statusCode(), response.body());
-                        return null;
-                    }
-                    try {
-                        // Return the actual text the user said
-                        return mapper.readTree(response.body()).path("text").asText();
-                    } catch (Exception e) {
-                        log.error("Groq JSON Error", e);
-                        return null;
-                    }
-                });
+        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
+            if (response.statusCode() != 200) {
+                log.error("Groq STT Error {}: {}", response.statusCode(), response.body());
+                return null;
+            }
+            try {
+                // Return the actual text the user said
+                return mapper.readTree(response.body()).path("text").asText();
+            } catch (Exception e) {
+                log.error("Groq JSON Error", e);
+                return null;
+            }
+        });
     }
 }

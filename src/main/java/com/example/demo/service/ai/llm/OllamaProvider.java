@@ -1,5 +1,6 @@
 package com.example.demo.service.ai.llm;
 
+import com.example.demo.model.ChatMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -12,6 +13,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -27,12 +29,19 @@ public class OllamaProvider implements LlmProvider, SmartInitializingSingleton {
 
     // --- STRATEGY IMPLEMENTATION ---
     @Override
-    public String generateAnswer(String systemPrompt, String userPrompt) {
+    public String generateAnswer(List<ChatMessage> history) {
         log.debug("Ollama generating answer...");
-        // Usually Spring AI handles connection errors, but strictly speaking
-        // we might want to ensure it's running before calling.
-        // For now, we assume initializeOllama() did its job.
-        return chatModel.call(systemPrompt + " " + userPrompt);
+        // Ideally, you use the 'messages' endpoint of Ollama.
+        // But if you use the simple 'generate' endpoint, you manually combine them:
+
+        StringBuilder promptBuilder = new StringBuilder();
+        for (ChatMessage msg : history) {
+            promptBuilder.append(msg.role().toUpperCase()).append(": ")
+                    .append(msg.content()).append("\n");
+        }
+
+        // Call Ollama with the huge string
+        return chatModel.call(promptBuilder.toString());
     }
 
     private void initializeOllama() {

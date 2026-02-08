@@ -1,5 +1,6 @@
 package com.example.demo.service.ai.llm;
 
+import com.example.demo.model.ChatMessage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -14,6 +15,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 
 /**
  * GROQ LLM PROVIDER
@@ -40,17 +42,22 @@ public class GroqLlmProvider implements LlmProvider {
     private String apiKey;
 
     @Override
-    public String generateAnswer(String systemPrompt, String userPrompt) {
+    public String generateAnswer(List<ChatMessage> history) {
         try {
             log.info("Sending prompt to Groq (Llama 3)...");
 
             ObjectNode payload = mapper.createObjectNode();
             payload.put("model", LLM_MODEL);
+            payload.put("temperature", 0.6);
             payload.put("stream", false);
 
-            ArrayNode messages = payload.putArray("messages");
-            messages.addObject().put("role", "system").put("content", systemPrompt);
-            messages.addObject().put("role", "user").put("content", userPrompt);
+            // Convert List<ChatMessage> -> JSON Array
+            ArrayNode messagesArray = payload.putArray("messages");
+            for (ChatMessage msg : history) {
+                messagesArray.addObject()
+                        .put("role", msg.role())
+                        .put("content", msg.content());
+            }
 
             String jsonBody = mapper.writeValueAsString(payload);
 

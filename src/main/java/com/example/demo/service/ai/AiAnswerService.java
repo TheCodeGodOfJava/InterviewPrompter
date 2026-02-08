@@ -16,6 +16,7 @@ public class AiAnswerService {
 
     // CHANGE 1: Inject the Interface, not the specific ChatModel
     private final LlmProvider llmProvider;
+    private final AiContextService aiContextService;
 
     private final SimpMessagingTemplate messagingTemplate;
 
@@ -31,16 +32,17 @@ public class AiAnswerService {
                     log.info("CPU starting inference for: {}", transcript);
                     long startTime = System.currentTimeMillis();
 
-                    String systemPrompt = "You are a helpful assistant. Provide a very concise response in Ukrainian:";
+                    // 2. Send FULL context to AI
+                    String aiAnswer = llmProvider.generateAnswer(aiContextService.getHistory());
 
-                    // CHANGE 2: Call the provider interface
-                    String response = llmProvider.generateAnswer(systemPrompt, transcript);
+                    // 3. Add AI's answer to context (so it remembers next time)
+                    aiContextService.addMessage("assistant", aiAnswer);
 
                     long duration = System.currentTimeMillis() - startTime;
-                    log.info(">> AI Answered in {}ms: [{}]", duration, response);
+                    log.info(">> AI Answered in {}ms: [{}]", duration, aiAnswer);
 
-                    lastAnswer.set(response);
-                    messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(response));
+                    lastAnswer.set(aiAnswer);
+                    messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(aiAnswer));
                 } catch (Exception e) {
                     log.error("AI processing failed: {}", e.getMessage());
                 } finally {
