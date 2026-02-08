@@ -15,11 +15,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-/**
- * The "Brain" of the operation.
- * It handles Voice Activity Detection (VAD), audio buffering, and WAV file creation.
- * It does NOT know how to transcribe - it delegates that to subclasses via the template method.
- */
 @Slf4j
 public abstract class AbstractSpeechEngine implements SpeechRecognizerEngine {
 
@@ -58,7 +53,6 @@ public abstract class AbstractSpeechEngine implements SpeechRecognizerEngine {
         double currentRms = calculateRMS(data, read);
         long now = System.currentTimeMillis();
 
-        // Optional: Calibration Logging (Prints once per second)
         if (now - lastRmsLogTime > 1000) {
             String status = currentRms > silenceThreshold ? "SPEAKING" : "SILENCE";
             log.info("[Audio Calibration] RMS: {} | Threshold: {} | Status: {}",
@@ -67,24 +61,19 @@ public abstract class AbstractSpeechEngine implements SpeechRecognizerEngine {
         }
 
         if (currentRms > silenceThreshold) {
-            // --- STATE: SPEAKING ---
+            //SPEAKING
             lastVoiceActivityTime = now;
-
             if (!isCollectingSpeech) {
-                log.debug(">> Speech Detected (RMS: {})", (int) currentRms);
+                log.debug("Speech Detected (RMS: {})", (int) currentRms);
                 isCollectingSpeech = true;
             }
-
             // Record this chunk
             audioBuffer.write(data, 0, read);
-
         } else {
-            // --- STATE: SILENCE ---
+            // STATE: SILENCE
             if (isCollectingSpeech) {
-                // We are in the "Pause" phase.
                 // We keep recording briefly to capture the "tail" of the last word.
                 audioBuffer.write(data, 0, read);
-
                 // Check: Has the silence lasted long enough to confirm the sentence is over?
                 if (now - lastVoiceActivityTime > PAUSE_BEFORE_SEND_MS) {
                     finalizeAndSend(onResult);
@@ -106,18 +95,16 @@ public abstract class AbstractSpeechEngine implements SpeechRecognizerEngine {
 
         // Duration Check (Anti-Hallucination)
         // If the audio is too short (e.g., a cough or chair squeak), ignore it.
-        double durationMs = (rawPcm.length / 32000.0) * 1000;
+        int durationMs = (int) ((rawPcm.length / 32000.0) * 1000);
         if (durationMs < MIN_PHRASE_DURATION_MS) {
-            log.debug("Dropped short noise ({}ms)", (int) durationMs);
+            log.debug("Dropped short noise ({}ms)", durationMs);
             return;
         }
 
-        log.info("Sentence captured ({}ms). Transcribing...", (int) durationMs);
-
+        log.info("Sentence captured ({}ms). Transcribing...", durationMs);
         // Convert raw PCM to WAV (Required by almost all APIs and Docker models)
         byte[] wavData = addWavHeader(rawPcm);
 
-        // --- DELEGATION STEP ---
         transcribe(wavData).thenAccept(text -> {
             if (text != null && !text.isBlank()) {
                 onResult.accept(text);
@@ -168,33 +155,27 @@ public abstract class AbstractSpeechEngine implements SpeechRecognizerEngine {
     }
 
     /**
-     * SHARED HELPER: Returns a Builder with the URI set.
      * Subclasses can then call .GET(), .POST(), or .header() on it.
      */
     protected HttpRequest.Builder newRequest(String url) {
-        return HttpRequest.newBuilder()
-                .uri(URI.create(url));
+        return HttpRequest.newBuilder().uri(URI.create(url));
     }
 
     /**
-     * SHARED HELPER: Builds a Multipart body for HTTP requests.
      * Use this for both Docker and Remote APIs.
-     *
-     * @param wavData  The audio file bytes (already with WAV header)
-     * @param boundary The multipart boundary string
-     * @param metadata A map of text fields (e.g., "model" -> "whisper", "temperature" -> "0")
-     * @return The complete byte array ready for HTTP POST
      */
     protected byte[] buildMultipartBody(byte[] wavData, String boundary, Map<String, String> metadata) {
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] newline = "\r\n".getBytes(StandardCharsets.UTF_8);
-            String boundaryLine = "--" + boundary + "\r\n";
-            String endBoundary = "--" + boundary + "--\r\n";
+            String rn = "\r\n";
+            String doubleDash = "--";
+            byte[] newline = rn.getBytes(StandardCharsets.UTF_8);
+            String boundaryLine = doubleDash + boundary + rn;
+            String endBoundary = doubleDash + boundary + doubleDash + rn;
 
             // 1. Write the Audio File Part (Common to all engines)
             output.write(boundaryLine.getBytes(StandardCharsets.UTF_8));
-            output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n").getBytes(StandardCharsets.UTF_8));
-            output.write("Content-Type: audio/wav\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            output.write(("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"" + rn).getBytes(StandardCharsets.UTF_8));
+            output.write(("Content-Type: audio/wav" + rn + rn).getBytes(StandardCharsets.UTF_8));
             output.write(wavData);
             output.write(newline);
 
@@ -202,13 +183,12 @@ public abstract class AbstractSpeechEngine implements SpeechRecognizerEngine {
             if (metadata != null) {
                 for (Map.Entry<String, String> entry : metadata.entrySet()) {
                     output.write(boundaryLine.getBytes(StandardCharsets.UTF_8));
-                    String header = "Content-Disposition: form-data; name=\"" + entry.getKey() + "\"\r\n\r\n";
+                    String header = "Content-Disposition: form-data; name=\"" + entry.getKey() + "\"" + rn + rn;
                     output.write(header.getBytes(StandardCharsets.UTF_8));
                     output.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
                     output.write(newline);
                 }
             }
-
             // 3. Write Footer
             output.write(endBoundary.getBytes(StandardCharsets.UTF_8));
             return output.toByteArray();

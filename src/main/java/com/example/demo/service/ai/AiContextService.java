@@ -37,7 +37,7 @@ public class AiContextService {
                 Відповідай українською мовою. Будь лаконічним, але технічно точним.
                \s""";
 
-    // Initialize with System Prompt
+
     public void init() {
         if (conversationHistory.isEmpty()) {
             conversationHistory.add(new ChatMessage("system", SYSTEM_PROMPT));
@@ -49,16 +49,9 @@ public class AiContextService {
      */
     public void addMessage(String role, String content) {
         if (content == null || content.isBlank()) return;
-
-        // Ensure initialized
         if (conversationHistory.isEmpty()) init();
-
         conversationHistory.add(new ChatMessage(role, content.trim()));
-
-        // Trim history if it gets too big (Sliding Window)
         trimHistory();
-
-        // Broadcast to Frontend (so you see the chat log)
         broadcastUpdate();
     }
 
@@ -70,23 +63,13 @@ public class AiContextService {
         return List.copyOf(conversationHistory);
     }
 
-    public void clear() {
-        conversationHistory.clear();
-        init(); // Restore system prompt
-        broadcastUpdate();
-        log.info("Context cleared.");
-    }
-
     private void trimHistory() {
-        // Keep the System Prompt (index 0) always!
-        // Remove the oldest message at index 1 until size is okay.
         while (conversationHistory.size() > MAX_HISTORY_SIZE) {
             conversationHistory.remove(1);
         }
     }
 
     private void broadcastUpdate() {
-        // Send the full list to the frontend topic "/topic/context"
         messagingTemplate.convertAndSend("/topic/context", conversationHistory);
     }
 }

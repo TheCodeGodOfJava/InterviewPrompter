@@ -27,7 +27,6 @@ public class OllamaProvider implements LlmProvider, SmartInitializingSingleton {
     private static final String OLLAMA_API_URL = "http://localhost:11434/api/tags";
     private static final long STARTUP_TIMEOUT_SECONDS = 15;
 
-    // --- STRATEGY IMPLEMENTATION ---
     @Override
     public String generateAnswer(List<ChatMessage> history) {
         log.debug("Ollama generating answer...");
@@ -123,16 +122,14 @@ public class OllamaProvider implements LlmProvider, SmartInitializingSingleton {
      * Uses a non-blocking approach suitable for Java 21 Virtual Threads.
      */
     private boolean waitForOllamaToBeReady() {
-        long timeoutMs = TimeUnit.SECONDS.toMillis(STARTUP_TIMEOUT_SECONDS);
+        long timeout = TimeUnit.SECONDS.toMillis(STARTUP_TIMEOUT_SECONDS);
         long start = System.currentTimeMillis();
 
-        while (System.currentTimeMillis() - start < timeoutMs) {
+        while (System.currentTimeMillis() - start < timeout) {
             if (isOllamaRunning()) {
                 return true;
             }
 
-            // Use LockSupport or a standard sleep
-            // In Java 21 Virtual Threads, this yields the thread efficiently
             try {
                 Thread.sleep(Duration.ofSeconds(1));
             } catch (InterruptedException e) {

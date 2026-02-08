@@ -38,7 +38,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         this.aiAnswerService = aiAnswerService;
         this.aiContextService = aiContextService;
         this.currentEngine = currentEngine;
-        // Parse YML string to Enum safely
+
         try {
             this.source = SOURCE.valueOf(defaultSource.toUpperCase());
             log.info("Initialized Audio Source from Config: {}", this.source);
@@ -53,10 +53,6 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         this.currentEngine = engine;
     }
 
-    /**
-     * Switches to a new audio source: stops current if running, updates source, starts new.
-     * Thread-safe via synchronized.
-     */
     public synchronized void switchAudioSource(SOURCE newSource) throws Exception {
         if (newSource == null) {
             throw new IllegalArgumentException("New source cannot be null");
@@ -64,7 +60,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
 
         if (newSource == this.source) {
             log.info("Already using source: {}", newSource);
-            return; // No-op if same source
+            return;
         }
 
         log.info("Switching audio source from {} to {}", this.source, newSource);
@@ -76,7 +72,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         this.source = newSource;
 
         // 3. Start new recognition with the updated source
-        startRecognition();  // renamed helper method
+        startRecognition();
     }
 
     public void startRecognition() throws Exception {
@@ -86,10 +82,9 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         }
         if (recognitionThread != null && recognitionThread.isAlive()) {
             log.warn("Recognition already running");
-            this.shutdownSource(); // safety net
+            this.shutdownSource();
         }
 
-        // --- FIX: ALWAYS APPLY THRESHOLD BEFORE STARTING ---
         log.info("Applying silence threshold: {} for source: {}", source.getThreshold(), source);
         currentEngine.setSilenceThreshold(source.getThreshold());
 
@@ -112,31 +107,26 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
 
-        // Скрываем лишний мусор из логов, чтобы не забивать буфер
         command.add("-loglevel");
         command.add("quiet");
 
         command.add("-f");
         command.add("dshow");
 
-        // Устройство ввода
         command.add("-i");
         command.add("audio=" + source.getDshowName());
 
-        // ПАРАМЕТРЫ КОНВЕРТАЦИИ (Критически важно!)
         command.add("-ar");
         command.add(String.valueOf(SAMPLE_RATE)); // 16000
         command.add("-ac");
-        command.add("1");                         // Смешиваем стерео в моно
+        command.add("1");
 
         command.add("-f");
         command.add("s16le");                     // Raw PCM 16-bit
-        command.add("pipe:1");                    // Вывод в стандартный поток
+        command.add("pipe:1");
 
         return new ProcessBuilder(command);
     }
-
-    // inside SpeechRecognitionService.java
 
     private void runRecognition(InputStream audioStream) {
         byte[] buffer = new byte[4096];
@@ -146,11 +136,9 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
             if (text != null && !text.isBlank()) {
                 log.info("Async Result: {}", text);
                 // STEP 1: Add what the user said to the Chat History
-                aiContextService.addMessage("user", text); // CHANGED
+                aiContextService.addMessage("user", text);
 
                 // STEP 2: Ask AI to answer (it will pull history internally)
-                // We pass the text just for logging/triggering,
-                // but the service actually uses the full list.
                 aiAnswerService.processSpeechWithAI(text);
             }
         };

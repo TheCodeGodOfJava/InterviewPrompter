@@ -14,7 +14,6 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class AiAnswerService {
 
-    // CHANGE 1: Inject the Interface, not the specific ChatModel
     private final LlmProvider llmProvider;
     private final AiContextService aiContextService;
 
@@ -32,14 +31,14 @@ public class AiAnswerService {
                     log.info("CPU starting inference for: {}", transcript);
                     long startTime = System.currentTimeMillis();
 
-                    // 2. Send FULL context to AI
+                    // 2. Send context to AI
                     String aiAnswer = llmProvider.generateAnswer(aiContextService.getHistory());
 
-                    // 3. Add AI's answer to context (so it remembers next time)
+                    // 3. Add AI's answer to context
                     aiContextService.addMessage("assistant", aiAnswer);
 
                     long duration = System.currentTimeMillis() - startTime;
-                    log.info(">> AI Answered in {}ms: [{}]", duration, aiAnswer);
+                    log.info("AI Answered in {}ms: [{}]", duration, aiAnswer);
 
                     lastAnswer.set(aiAnswer);
                     messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(aiAnswer));

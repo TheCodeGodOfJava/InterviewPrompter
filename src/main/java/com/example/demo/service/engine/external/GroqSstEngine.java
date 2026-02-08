@@ -13,13 +13,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * INTELLIGENT ENGINE
- * Input: Audio (WAV)
- * Output: AI Answer (String)
- * * This engine chains the Speech-to-Text and the Text-to-AI logic
- * internally, so the main app only ever sees the final answer.
- */
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "speech.engine", havingValue = "groq")
@@ -28,8 +21,6 @@ public class GroqSstEngine extends AbstractSpeechEngine {
     private final HttpClient client;
     private final ObjectMapper mapper;
 
-    // 1. SETTINGS FOR SPEECH RECOGNITION (e.g., Groq or OpenAI)
-    // We use Groq here because it's fast, but you can swap the URL for OpenAI
     private static final String STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 
     @Value("${groq.api.key}")
@@ -47,13 +38,12 @@ public class GroqSstEngine extends AbstractSpeechEngine {
 
     private CompletableFuture<String> sendAudioToCloud(byte[] wavData) {
         String boundary = "Boundary-" + UUID.randomUUID();
-
         Map<String, String> params = Map.of("model", "whisper-large-v3-turbo", "language", "uk");
-
-
         byte[] body = buildMultipartBody(wavData, boundary, params);
-
-        HttpRequest request = newRequest(STT_URL).header("Authorization", "Bearer " + apiKey).header("Content-Type", "multipart/form-data; boundary=" + boundary).POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
+        HttpRequest request = newRequest(STT_URL)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
 
         return client.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
             if (response.statusCode() != 200) {

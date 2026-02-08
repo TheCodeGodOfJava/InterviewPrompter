@@ -14,7 +14,6 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.net.HttpURLConnection;
@@ -24,14 +23,12 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * The "Heavy Lifter".
  * Runs a local Docker container with Faster-Whisper.
  */
 @Slf4j
@@ -51,7 +48,6 @@ public class DockerWhisperEngine extends AbstractSpeechEngine {
 
     public DockerWhisperEngine(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
-        // Use your specific HTTP 1.1 settings
         this.client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(Duration.ofSeconds(2)).build();
         this.dockerClient = createDockerClient();
     }
@@ -67,16 +63,11 @@ public class DockerWhisperEngine extends AbstractSpeechEngine {
         log.info("--- Local Whisper Engine Ready ---");
     }
 
-    /**
-     * IMPLEMENTATION OF THE TEMPLATE METHOD
-     * This logic is specific to the Local Docker container (localhost:8000)
-     */
     protected CompletableFuture<String> transcribe(byte[] audio) {
         try {
             // 1. Prepare Payload (Fast, zero-copy methods we created earlier)
             byte[] wavData = addWavHeader(audio);
             String boundary = "JavaBoundary" + System.currentTimeMillis();
-
 
             Map<String, String> params = Map.of(
                     "model", "Systran/faster-whisper-small",
@@ -86,15 +77,17 @@ public class DockerWhisperEngine extends AbstractSpeechEngine {
             );
             byte[] multipartBody = buildMultipartBody(wavData, boundary, params);
             // 2. Build Request
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create("http://localhost:8000/v1/audio/transcriptions")).header("Content-Type", "multipart/form-data; boundary=" + boundary).POST(HttpRequest.BodyPublishers.ofByteArray(multipartBody)).build();
+            HttpRequest request = newRequest("http://localhost:8000/v1/audio/transcriptions")
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(multipartBody))
+                    .build();
 
-            // 3. LOGGING: Use DEBUG for heavy payloads. Keep INFO clean.
             log.debug("Dispatching {} bytes to Whisper...", multipartBody.length);
 
             // --- TIMER START ---
             final long startTime = System.currentTimeMillis();
 
-            // 4. ASYNC I/O: This is the magic.
+            // 3. ASYNC I/O
             // It returns immediately. The HTTP Client handles the socket in the background.
             return client.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
                 // This runs LATER, when the response arrives
@@ -107,7 +100,7 @@ public class DockerWhisperEngine extends AbstractSpeechEngine {
                     JsonNode node = objectMapper.readTree(response.body());
                     String text = node.path("text").asText("").trim();
                     long duration = System.currentTimeMillis() - startTime;
-                    log.info(">> Speech recognized in {}ms: [{}]", duration, text);
+                    log.info("Speech recognized in {}ms: [{}]", duration, text);
                     return text;
                 } catch (Exception e) {
                     log.error("JSON Parsing Failed", e);
@@ -144,8 +137,13 @@ public class DockerWhisperEngine extends AbstractSpeechEngine {
         // Named volume for persistence (managed by Docker; create if not exists)
         String volumeName = "speaches-hf-cache";
         createVolumeIfNotExists(volumeName);
-
-        var containerResponse = dockerClient.createContainerCmd("ghcr.io/speaches-ai/speaches:latest-cpu").withLabels(java.util.Map.of(ENGINE_LABEL_KEY, ENGINE_LABEL_VALUE)).withEnv("PRELOAD_MODELS=[\"" + MODEL_NAME + "\"]", "COMPUTE_TYPE=int8", "INFERENCE_DEVICE=cpu", "OMP_NUM_THREADS=4", "VAD_FILTER=true", "BEAM_SIZE=1", "TEMPERATURE=0", "REPETITION_PENALTY=1.1", "CONDITION_ON_PREVIOUS_TEXT=false").withHostConfig(HostConfig.newHostConfig().withPortBindings(portBindings).withBinds(new Bind(volumeName, new Volume("/home/ubuntu/.cache/huggingface/hub"))).withAutoRemove(true)).exec();
+        var containerResponse = dockerClient.createContainerCmd("ghcr.io/speaches-ai/speaches:latest-cpu")
+                .withLabels(java.util.Map.of(ENGINE_LABEL_KEY, ENGINE_LABEL_VALUE))
+                .withEnv("PRELOAD_MODELS=[\"" + MODEL_NAME + "\"]", "COMPUTE_TYPE=int8", "INFERENCE_DEVICE=cpu", "OMP_NUM_THREADS=4", "VAD_FILTER=true", "BEAM_SIZE=1", "TEMPERATURE=0", "REPETITION_PENALTY=1.1", "CONDITION_ON_PREVIOUS_TEXT=false")
+                .withHostConfig(HostConfig.newHostConfig()
+                        .withPortBindings(portBindings).withBinds(new Bind(volumeName, new Volume("/home/ubuntu/.cache/huggingface/hub")))
+                        .withAutoRemove(true))
+                .exec();
 
         dockerClient.startContainerCmd(containerResponse.getId()).exec();
         return containerResponse.getId();
@@ -155,7 +153,6 @@ public class DockerWhisperEngine extends AbstractSpeechEngine {
         log.info("Waiting for model {} to be fully cached and loaded...", MODEL_NAME);
         triggerDownloadViaApi();
         int attempts = 0;
-        // 300 * 5s = 25 minutes (safe for slow internet)
         while (attempts < 300) {
             try {
                 HttpRequest request = newRequest("http://localhost:8000/v1/models").GET().build();

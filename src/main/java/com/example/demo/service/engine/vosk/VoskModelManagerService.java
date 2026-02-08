@@ -19,7 +19,7 @@ import java.util.zip.ZipInputStream;
 public class VoskModelManagerService {
 
     //here we can add new language models
-    //"small" models may be to shallow for your tasks, but "full" models can be more than 1Gb
+    //"small" models may be too shallow for your tasks, but "full" models can be more than 1Gb
     private enum MODEL {
         UK("vosk-model-uk-v3"), EN("vosk-model-en-us-0.22"), RU("vosk-model-ru-0.42");
         private final String MODEL_FOLDER_NAME;
@@ -54,28 +54,24 @@ public class VoskModelManagerService {
     }
 
     private void downloadAndUnzip(String url) throws IOException {
-        // 1. Download zip to temp file
-        // Using NIO.2 for temp file creation
+
         Path tempZip = Files.createTempFile("vosk_model", ".zip");
         try (InputStream in = URI.create(url).toURL().openStream()) {
             Files.copy(in, tempZip, StandardCopyOption.REPLACE_EXISTING);
         }
-        // 2. Unzip
+
         try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(tempZip))) {
             ZipEntry entry;
             Path outputPath = Paths.get(SOUND_DIR);
 
             while ((entry = zis.getNextEntry()) != null) {
-                // Use resolve to handle paths safely
                 Path entryPath = outputPath.resolve(entry.getName());
-                // Security check: Prevent "Zip Slip" vulnerability
                 if (!entryPath.normalize().startsWith(outputPath.normalize())) {
                     throw new IOException("Bad zip entry: " + entry.getName());
                 }
                 if (entry.isDirectory()) {
                     Files.createDirectories(entryPath);
                 } else {
-                    // Create parent directories if they don't exist
                     if (entryPath.getParent() != null) {
                         Files.createDirectories(entryPath.getParent());
                     }
@@ -84,7 +80,6 @@ public class VoskModelManagerService {
                 zis.closeEntry();
             }
         } finally {
-            // 3. Delete temp file safely
             Files.deleteIfExists(tempZip);
         }
     }
