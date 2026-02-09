@@ -155,53 +155,80 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         }
     }
 
-
     private void shutdownSource() {
-        log.info("Initiating speech recognition shutdown");
+        log.info("Initiating speech recognition shutdown...");
         isRunning = false;
-
         List<Throwable> problems = new ArrayList<>();
 
-        if (recognitionThread != null) {
-            recognitionThread.interrupt();
+        // -------------------------------------------------
+        // STEP 1: Cut the data source (ffmpeg)
+        // This forces the InputStream.read() in the thread to unblock (return -1 or throw IOException)
+        // -------------------------------------------------
+        if (ffmpegProcess != null) {
             try {
-                recognitionThread.join(5000);  // Wait up to 5 seconds
-            } catch (InterruptedException e) {
-                log.warn("Interrupted while joining recognition thread", e);
-                Thread.currentThread().interrupt();  // Restore interrupt flag
-            }
+                // 1. Kill child processes (if any)
+                ffmpegProcess.descendants().forEach(ProcessHandle::destroy);
 
-            // After timeout, check if still alive and force stop if necessary
-            if (recognitionThread.isAlive()) {
-                problems.add(new IllegalStateException("Recognition thread did not stop within 5 seconds – consider it hung!"));
-                // No forceful stop for threads (can't "kill" Java threads safely),
-                // but since it's daemon, JVM exit will kill it anyway.
-            }
-        }
+                // 2. Kill the main process
+                if (ffmpegProcess.isAlive()) {
+                    ffmpegProcess.destroy(); // Try graceful SIGTERM
 
-        if (ffmpegProcess != null && ffmpegProcess.isAlive()) {
-            ffmpegProcess.destroy();
-            try {
-                if (!ffmpegProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                    log.warn("ffmpeg graceful termination timeout → forcing kill");
-                    ffmpegProcess.destroyForcibly();
-                    if (ffmpegProcess.isAlive()) {
-                        problems.add(new IllegalStateException("ffmpeg process still alive after destroyForcibly!"));
+                    // Wait briefly for it to die
+                    if (!ffmpegProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                        log.warn("FFmpeg did not stop gracefully. Forcing kill...");
+                        ffmpegProcess.destroyForcibly(); // SIGKILL
                     }
                 }
             } catch (InterruptedException e) {
                 problems.add(e);
                 Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                problems.add(e);
             }
         }
 
+        // -------------------------------------------------
+        // STEP 2: Close the InputStream explicitly
+        // This guarantees the thread throws an IOException if it's still reading
+        // -------------------------------------------------
+        if (ffmpegProcess != null) {
+            try {
+                ffmpegProcess.getInputStream().close();
+            } catch (Exception e) {
+                log.info("Ffmpeg system shutdown.", e);
+            }
+        }
+
+        // -------------------------------------------------
+        // STEP 3: Stop the Java Thread
+        // Now that the stream is broken, the thread should be exiting its loop naturally.
+        // -------------------------------------------------
+        if (recognitionThread != null && recognitionThread.isAlive()) {
+            recognitionThread.interrupt(); // Set flag just in case
+            try {
+                recognitionThread.join(2000); // Should finish almost instantly now
+            } catch (InterruptedException e) {
+                log.warn("Interrupted while joining recognition thread", e);
+                Thread.currentThread().interrupt();
+            }
+
+            if (recognitionThread.isAlive()) {
+                problems.add(new IllegalStateException("Recognition thread stuck even after Process died!"));
+            }
+        }
+
+        // -------------------------------------------------
+        // STEP 4: Reporting
+        // -------------------------------------------------
         if (!problems.isEmpty()) {
-            log.warn("Some problems occurred during speech recognition shutdown ({} issues)", problems.size());
-            problems.forEach(t -> log.debug("Shutdown issue", t));
+            log.warn("Shutdown completed with {} issues.", problems.size());
+            problems.forEach(t -> log.debug("Shutdown issue: ", t));
         } else {
-            log.info("Speech recognition shutdown completed cleanly");
+            log.info("Speech recognition shutdown completed cleanly.");
         }
     }
+
+
 
     @PreDestroy
     public void shutdown() {

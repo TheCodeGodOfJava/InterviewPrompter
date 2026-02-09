@@ -10,9 +10,10 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Runs a local Docker container with Faster-Whisper.
@@ -34,7 +36,9 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "speech.engine", havingValue = "whisper", matchIfMissing = true)
-public class DockerWhisperEngine extends AbstractSpeechEngine {
+public class DockerWhisperEngine extends AbstractSpeechEngine implements ApplicationRunner {
+
+    private final AtomicBoolean isReady = new AtomicBoolean(false);
 
     private final ObjectMapper objectMapper;
     private final HttpClient client;
@@ -52,18 +56,30 @@ public class DockerWhisperEngine extends AbstractSpeechEngine {
         this.dockerClient = createDockerClient();
     }
 
-    @PostConstruct
-    public void initSync() {
-        log.info("--- Initializing Local Docker Whisper Engine ---");
-        ensureImageExists();
-        this.containerId = startContainer();
-        waitForHealth();
-        ensureModelDownloaded();
-        warmUpModel();
-        log.info("--- Local Whisper Engine Ready ---");
+    @Override
+    public void run(ApplicationArguments args) {
+        // Run this in a background thread so Spring Boot finishes starting immediately
+        Thread.ofVirtual().start(() -> {
+            log.info("--- Async Init: Docker Whisper ---");
+            try {
+                ensureImageExists();
+                this.containerId = startContainer();
+                waitForHealth();
+                ensureModelDownloaded();
+                warmUpModel();
+                isReady.set(true);
+                log.info("--- Docker Whisper Engine Ready ---");
+            } catch (Exception e) {
+                log.error("Failed to initialize Docker Whisper", e);
+            }
+        });
     }
 
     protected CompletableFuture<String> transcribe(byte[] audio) {
+        if (!isReady.get()) {
+            log.warn("Docker Whisper Engine is still initializing...");
+            return CompletableFuture.completedFuture("");
+        }
         try {
             // 1. Prepare Payload (Fast, zero-copy methods we created earlier)
             byte[] wavData = addWavHeader(audio);
