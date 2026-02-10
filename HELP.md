@@ -88,3 +88,5 @@ Install Ollama (one-time, ~5 minutes)
 To test Open terminal / cmd / PowerShell and run: ollama run deepseek-coder:6.7b-instruct-q4_K_M
 
 Few seconds later you will see "Send a message"
+
+### 3️⃣ Add to "resources" secrets.yml to store your remote API keys

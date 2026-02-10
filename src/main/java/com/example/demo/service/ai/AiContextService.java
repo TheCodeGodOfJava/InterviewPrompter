@@ -24,7 +24,7 @@ public class AiContextService {
 
     // The Persona
     private static final String SYSTEM_PROMPT = """
-                Ти - Senior Java Tech Lead. Твоя мета - допомогти кандидату пройти технічну співбесіду на такий же рівень.
+                Ти - Senior Java та Angular Tech Lead. Твоя мета - допомогти кандидату пройти технічну співбесіду на такий же рівень.
                 Не давай сухих визначень з Вікіпедії. Давай глибокі, професійні відповіді по питанням з тем\s
                 Java, Spring Boot, Hibernate, Object Oriented Programming, Angular, JavaScript та інші.
                \s

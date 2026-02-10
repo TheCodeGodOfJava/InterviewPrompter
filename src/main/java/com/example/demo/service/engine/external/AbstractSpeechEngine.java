@@ -53,7 +53,7 @@ public abstract class AbstractSpeechEngine implements SpeechRecognizerEngine {
         double currentRms = calculateRMS(data, read);
         long now = System.currentTimeMillis();
 
-        if (now - lastRmsLogTime > 1000) {
+        if (now - lastRmsLogTime > 1500) {
             String status = currentRms > silenceThreshold ? "SPEAKING" : "SILENCE";
             log.info("[Audio Calibration] RMS: {} | Threshold: {} | Status: {}",
                     (int) currentRms, silenceThreshold, status);
