@@ -29,7 +29,7 @@ public class GroqLlmProvider implements LlmProvider {
     private final HttpClient client = HttpClient.newHttpClient();
 
     private static final String LLM_URL = "https://api.groq.com/openai/v1/chat/completions";
-    private static final String LLM_MODEL = "llama-3.3-70b-versatile";
+    private static final String LLM_MODEL = "moonshotai/kimi-k2-instruct";
 
     @Value("${groq.api.key}")
     private String apiKey;

@@ -35,12 +35,7 @@ dependencies {
     implementation 'commons-io:commons-io:2.14.0'
     implementation 'com.github.docker-java:docker-java-core:3.7.0'
     implementation 'com.github.docker-java:docker-java-transport-httpclient5:3.7.0'
-
-    constraints {
-        implementation('com.fasterxml.jackson.core:jackson-databind:2.18.2')
-        implementation('com.fasterxml.jackson.core:jackson-core:2.18.2')
-        implementation('com.fasterxml.jackson.core:jackson-annotations:2.18.2')
-    }
+    implementation 'com.github.kwhat:jnativehook:2.2.2'
 
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
@@ -51,8 +46,6 @@ dependencies {
 
 dependencyManagement {
     imports {
-        // This BOM will automatically pick the version of Spring AI
-        // that is compatible with Spring Boot 4.0.x
         mavenBom "org.springframework.ai:spring-ai-bom:1.0.0-M6"
     }
 }
