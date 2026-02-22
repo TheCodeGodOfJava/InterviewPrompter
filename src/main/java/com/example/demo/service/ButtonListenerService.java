@@ -48,16 +48,16 @@ public class ButtonListenerService implements NativeKeyListener {
 
         // 2. Check if it matches exactly: Ctrl + Alt + Shift + F12
         if (e.getKeyCode() == NativeKeyEvent.VC_F1 && hasCtrl && hasAlt && hasShift) {
-            log.info("Macro Detected! First button pressed!");
+            log.info("Macro Detected! 1-st button pressed!");
         }
         if (e.getKeyCode() == NativeKeyEvent.VC_F2 && hasCtrl && hasAlt && hasShift) {
-            log.info("Macro Detected! Second button pressed!");
+            log.info("Macro Detected! 2-nd button pressed!");
         }
         if (e.getKeyCode() == NativeKeyEvent.VC_F3 && hasCtrl && hasAlt && hasShift) {
-            log.info("Macro Detected! Third button pressed!");
+            log.info("Macro Detected! 3-rd button pressed!");
         }
         if (e.getKeyCode() == NativeKeyEvent.VC_F4 && hasCtrl && hasAlt && hasShift) {
-            log.info("Macro Detected! Fourth button pressed!");
+            log.info("Macro Detected! 4-th button pressed!");
         }
     }
 
