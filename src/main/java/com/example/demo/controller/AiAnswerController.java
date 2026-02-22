@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.model.AiUpdate;
 import com.example.demo.service.ai.AiAnswerService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,5 +27,10 @@ public class AiAnswerController {
     @SubscribeMapping("/ai-response")
     public AiUpdate onSubscribe() {
         return getLatest();
+    }
+
+    @MessageMapping("/request-analysis")
+    public void handleManualAnalysisRequest() {
+        aiAnswerService.generateManualAnswer();
     }
 }

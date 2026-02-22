@@ -135,11 +135,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         Consumer<String> onTextRecognized = (text) -> {
             if (text != null && !text.isBlank()) {
                 log.info("Async Result: {}", text);
-                // STEP 1: Add what the user said to the Chat History
                 aiContextService.addMessage("user", text);
-
-                // STEP 2: Ask AI to answer (it will pull history internally)
-                aiAnswerService.processSpeechWithAI(text);
             }
         };
 
