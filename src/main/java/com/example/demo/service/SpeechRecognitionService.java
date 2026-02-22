@@ -1,8 +1,8 @@
 package com.example.demo.service;
 
 import com.example.demo.model.SOURCE;
-import com.example.demo.service.ai.AiAnswerService;
 import com.example.demo.service.ai.AiContextService;
+import com.example.demo.service.ai.HallucinationFilterService;
 import com.example.demo.service.engine.SpeechRecognizerEngine;
 import jakarta.annotation.PreDestroy;
 import lombok.Getter;
@@ -27,15 +27,15 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
 
     @Getter
     private volatile SOURCE source;
-    private final AiAnswerService aiAnswerService;
+    private final HallucinationFilterService hallucinationFilterService;
     private final AiContextService aiContextService;
 
     private Process ffmpegProcess;
     private Thread recognitionThread;
 
     // Constructor remains the same (loads model)
-    public SpeechRecognitionService(AiContextService aiContextService, AiAnswerService aiAnswerService, SpeechRecognizerEngine currentEngine, @Value("${speech.source:MICROPHONE}") String defaultSource) {
-        this.aiAnswerService = aiAnswerService;
+    public SpeechRecognitionService(AiContextService aiContextService, HallucinationFilterService hallucinationFilterService, SpeechRecognizerEngine currentEngine, @Value("${speech.source:MICROPHONE}") String defaultSource) {
+        this.hallucinationFilterService = hallucinationFilterService;
         this.aiContextService = aiContextService;
         this.currentEngine = currentEngine;
 
@@ -134,6 +134,12 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         // 1. Define what happens when text is recognized (The Callback)
         Consumer<String> onTextRecognized = (text) -> {
             if (text != null && !text.isBlank()) {
+                //Check hallucination
+                if (!hallucinationFilterService.isValidTranscript(text)) {
+                    log.info("Ignored hallucination: {}", text);
+                    return;
+                }
+
                 log.info("Async Result: {}", text);
                 aiContextService.addMessage("user", text);
             }
@@ -223,7 +229,6 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
             log.info("Speech recognition shutdown completed cleanly.");
         }
     }
-
 
 
     @PreDestroy
