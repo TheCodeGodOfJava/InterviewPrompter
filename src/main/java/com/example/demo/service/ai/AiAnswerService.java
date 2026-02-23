@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -24,6 +25,8 @@ public class AiAnswerService {
 
     private final AtomicReference<String> lastAnswer = new AtomicReference<>("");
 
+    private final AtomicReference<String> lastProcessedUserInput = new AtomicReference<>("");
+
     private final ExecutorService aiExecutor = Executors.newSingleThreadExecutor();
 
     public void generateManualAnswer() {
@@ -31,28 +34,42 @@ public class AiAnswerService {
             try {
                 log.info("Manual AI analysis requested...");
 
-                // Optional safeguard: Don't query if the history only contains the System Prompt
                 if (aiContextService.getHistory().size() <= 1) {
                     log.info("Not enough context to analyze yet.");
-                    messagingTemplate.convertAndSend("/topic/ai-response",
-                            new AiUpdate("Waiting for conversation context...", "READY"));
+                    sendUnlockMessage("Waiting for conversation context...");
                     return;
                 }
 
+                String currentUserState = aiContextService.getHistory().stream()
+                        .filter(msg -> "user".equals(msg.role()))
+                        .map(msg -> msg.content())
+                        .collect(Collectors.joining(" "));
+
+                if (currentUserState.trim().isEmpty()) {
+                    log.info("AI Request Ignored: User context is empty.");
+                    sendUnlockMessage("");
+                    return;
+                }
+
+                if (currentUserState.equals(lastProcessedUserInput.get())) {
+                    log.info("AI Request Ignored: User input hasn't changed. Returning cached answer.");
+                    sendUnlockMessage(lastAnswer.get());
+                    return;
+                }
+
+                lastProcessedUserInput.set(currentUserState);
+
                 long startTime = System.currentTimeMillis();
 
-                // 1. Send FULL context to AI
                 String aiAnswer = llmProvider.generateAnswer(aiContextService.getHistory());
 
-                // 2. Add AI's answer to context so it remembers it for the next turn
                 aiContextService.addMessage("assistant", aiAnswer);
 
                 long duration = System.currentTimeMillis() - startTime;
                 log.info("AI Answered in {}ms", duration);
 
-                // 3. Update State & push success to UI
                 lastAnswer.set(aiAnswer);
-                messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(aiAnswer, "READY"));
+                sendUnlockMessage(aiAnswer);
 
             } catch (Exception e) {
                 log.error("AI processing failed", e);
@@ -65,6 +82,13 @@ public class AiAnswerService {
 
     public String getLatestAnswer() {
         return lastAnswer.get();
+    }
+
+    /**
+     * Helper method to instantly send a payload to Angular so the UI spinner stops.
+     */
+    private void sendUnlockMessage(String text) {
+        messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(text, "READY"));
     }
 
     @PreDestroy
