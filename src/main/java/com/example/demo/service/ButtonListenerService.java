@@ -77,7 +77,19 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
         boolean hasAlt = (modifiers & NativeKeyEvent.ALT_L_MASK) != 0 || (modifiers & NativeKeyEvent.ALT_R_MASK) != 0;
         boolean hasShift = (modifiers & NativeKeyEvent.SHIFT_L_MASK) != 0 || (modifiers & NativeKeyEvent.SHIFT_R_MASK) != 0;
 
-        // ... F1 to F4 macros ...
+        if (e.getKeyCode() == NativeKeyEvent.VC_F1 && hasCtrl && hasAlt && hasShift) {
+            log.info("Macro Detected! 1-st button pressed!");
+        }
+        if (e.getKeyCode() == NativeKeyEvent.VC_F2 && hasCtrl && hasAlt && hasShift) {
+            log.info("Macro Detected! 2-nd button pressed!");
+            aiAnswerService.generateManualAnswer();
+        }
+        if (e.getKeyCode() == NativeKeyEvent.VC_F3 && hasCtrl && hasAlt && hasShift) {
+            log.info("Macro Detected! 3-rd button pressed!");
+        }
+        if (e.getKeyCode() == NativeKeyEvent.VC_F4 && hasCtrl && hasAlt && hasShift) {
+            log.info("Macro Detected! 4-th button pressed!");
+        }
 
         if (e.getKeyCode() == NativeKeyEvent.VC_F5 && hasCtrl && hasAlt && hasShift) {
             isScrollModeActive = !isScrollModeActive;
