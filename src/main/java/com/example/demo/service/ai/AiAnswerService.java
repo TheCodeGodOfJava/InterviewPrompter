@@ -1,6 +1,7 @@
 package com.example.demo.service.ai;
 
 import com.example.demo.model.AiUpdate;
+import com.example.demo.model.ChatMessage;
 import com.example.demo.service.ai.llm.LlmProvider;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,8 @@ public class AiAnswerService {
     private final AiContextService aiContextService;
     private final SimpMessagingTemplate messagingTemplate;
 
+    public final static String AI_ANSWER_TAG = "assistant";
+
     private final AtomicReference<String> lastAnswer = new AtomicReference<>("");
 
     private final AtomicReference<String> lastProcessedUserInput = new AtomicReference<>("");
@@ -42,7 +45,7 @@ public class AiAnswerService {
 
                 String currentUserState = aiContextService.getHistory().stream()
                         .filter(msg -> "user".equals(msg.role()))
-                        .map(msg -> msg.content())
+                        .map(ChatMessage::content)
                         .collect(Collectors.joining(" "));
 
                 if (currentUserState.trim().isEmpty()) {
@@ -63,7 +66,7 @@ public class AiAnswerService {
 
                 String aiAnswer = llmProvider.generateAnswer(aiContextService.getHistory());
 
-                aiContextService.addMessage("assistant", aiAnswer);
+                aiContextService.addMessage(AI_ANSWER_TAG, aiAnswer);
 
                 long duration = System.currentTimeMillis() - startTime;
                 log.info("AI Answered in {}ms", duration);

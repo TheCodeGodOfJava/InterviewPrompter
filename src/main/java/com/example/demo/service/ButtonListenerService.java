@@ -1,6 +1,7 @@
 package com.example.demo.service;
 
 import com.example.demo.service.ai.AiAnswerService;
+import com.example.demo.service.ai.AiContextService;
 import com.github.kwhat.jnativehook.GlobalScreen;
 import com.github.kwhat.jnativehook.NativeHookException;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
@@ -24,6 +25,8 @@ import java.util.logging.Logger;
 public class ButtonListenerService implements NativeKeyListener, NativeMouseMotionListener {
 
     private final AiAnswerService aiAnswerService;
+    private final AiContextService aiContextService;
+
     private final SimpMessagingTemplate messagingTemplate;
 
     private boolean isScrollModeActive = true;
@@ -79,6 +82,7 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
 
         if (e.getKeyCode() == NativeKeyEvent.VC_F1 && hasCtrl && hasAlt && hasShift) {
             log.info("Macro Detected! 1-st button pressed!");
+            aiContextService.clearAnsweredQuestions();
         }
         if (e.getKeyCode() == NativeKeyEvent.VC_F2 && hasCtrl && hasAlt && hasShift) {
             log.info("Macro Detected! 2-nd button pressed!");

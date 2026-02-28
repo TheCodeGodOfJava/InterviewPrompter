@@ -6,8 +6,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+
+import static com.example.demo.service.ai.AiAnswerService.AI_ANSWER_TAG;
 
 @Slf4j
 @Service
@@ -76,6 +79,46 @@ public class AiContextService {
     private void trimHistory() {
         while (conversationHistory.size() > MAX_HISTORY_SIZE) {
             conversationHistory.remove(1);
+        }
+    }
+
+    /**
+     * Removes all question+answer pairs, keeping only the System prompt
+     * and any pending unanswered user questions at the end of the history.
+     */
+    public void clearAnsweredQuestions() {
+        if (conversationHistory.size() <= 1) return; // Nothing to clear if it's just the system prompt
+
+        List<ChatMessage> retainedMessages = new ArrayList<>();
+
+        // 1. Always keep the System Prompt (index 0)
+        retainedMessages.add(conversationHistory.getFirst());
+
+        // 2. Find the index of the last time the AI answered
+        int lastAnswerIndex = -1;
+        for (int i = conversationHistory.size() - 1; i > 0; i--) {
+            String role = conversationHistory.get(i).role();
+            // Check for whatever role your AI uses for its own answers
+            if (AI_ANSWER_TAG.equalsIgnoreCase(role)) {
+                lastAnswerIndex = i;
+                break;
+            }
+        }
+
+        // 3. If we found an answer, everything after it is an "unanswered" question
+        if (lastAnswerIndex != -1) {
+            for (int i = lastAnswerIndex + 1; i < conversationHistory.size(); i++) {
+                retainedMessages.add(conversationHistory.get(i));
+            }
+
+            // 4. Safely update the thread-safe list and broadcast
+            conversationHistory.clear();
+            conversationHistory.addAll(retainedMessages);
+            broadcastUpdate();
+            log.info("Context cleared. Retained system prompt and {} unanswered messages.",
+                    retainedMessages.size() - 1);
+        } else {
+            log.info("No answered questions found to clear. Context remains unchanged.");
         }
     }
 
