@@ -20,12 +20,11 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "ai.provider", havingValue = "groq") // Fixed value
+@ConditionalOnProperty(name = "ai.provider", havingValue = "groq")
 public class GroqLlmProvider implements LlmProvider {
 
     private final ObjectMapper mapper;
 
-    // Create one client to reuse (Java 21 best practice)
     private final HttpClient client = HttpClient.newHttpClient();
 
     private static final String LLM_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -38,12 +37,10 @@ public class GroqLlmProvider implements LlmProvider {
     @Override
     public String generateAnswer(List<ChatMessage> history) {
         try {
-            // STEP 1: Convert your Domain Objects (ChatMessage) to DTOs (GroqMessage)
             List<GroqMessage> apiMessages = history.stream()
-                    .map(msg -> new GroqMessage(msg.role(), msg.content()))
+                    .map(msg -> new GroqMessage(msg.role().name().toLowerCase(), msg.content())) // Force lowercase here
                     .toList();
 
-            // STEP 2: Create the Request Object
             GroqRequest requestPayload = new GroqRequest(
                     LLM_MODEL,
                     0.6,
@@ -51,7 +48,6 @@ public class GroqLlmProvider implements LlmProvider {
                     apiMessages
             );
 
-            // STEP 3: Auto-Magic Serialization (Object -> JSON String)
             String jsonBody = mapper.writeValueAsString(requestPayload);
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -61,7 +57,6 @@ public class GroqLlmProvider implements LlmProvider {
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .build();
 
-            // STEP 4: Send Request
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
@@ -69,11 +64,7 @@ public class GroqLlmProvider implements LlmProvider {
                 return "I am sorry, Groq is offline.";
             }
 
-            // STEP 5: Auto-Magic Deserialization (JSON String -> Object)
-            // We read the JSON directly into our Record structure
             GroqResponse responseObj = mapper.readValue(response.body(), GroqResponse.class);
-
-            // Access data using standard Java methods (no more .path("choices").get(0)...)
             return responseObj.choices().getFirst().message().content();
 
         } catch (Exception e) {
