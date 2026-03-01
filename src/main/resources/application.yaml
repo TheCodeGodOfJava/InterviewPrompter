@@ -12,7 +12,7 @@ spring:
         api-key: ${google.api.key}
         chat:
           options:
-            model: gemini-2.5-pro
+            model: gemini-2.5-flash
   threads:
     virtual:
       enabled: true

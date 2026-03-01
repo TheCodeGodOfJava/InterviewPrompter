@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
+import static com.example.demo.model.ROLE.USER;
 import static com.example.demo.service.engine.SpeechRecognizerEngine.SAMPLE_RATE;
 
 @Slf4j
@@ -141,7 +142,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
                 }
 
                 log.info("Async Result: {}", text);
-                aiContextService.addMessage("user", text);
+                aiContextService.addMessage(USER, text);
             }
         };
 

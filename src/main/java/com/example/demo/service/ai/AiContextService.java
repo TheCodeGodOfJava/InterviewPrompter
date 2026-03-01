@@ -1,6 +1,7 @@
 package com.example.demo.service.ai;
 
 import com.example.demo.model.ChatMessage;
+import com.example.demo.model.ROLE;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -10,7 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import static com.example.demo.service.ai.AiAnswerService.AI_ANSWER_TAG;
+import static com.example.demo.model.ROLE.ASSISTANT;
+import static com.example.demo.model.ROLE.SYSTEM;
 
 @Slf4j
 @Service
@@ -53,14 +55,14 @@ public class AiContextService {
 
     public void init() {
         if (conversationHistory.isEmpty()) {
-            conversationHistory.add(new ChatMessage("system", SYSTEM_PROMPT));
+            conversationHistory.add(new ChatMessage(SYSTEM, SYSTEM_PROMPT));
         }
     }
 
     /**
      * Adds a message and broadcasts the update to the UI.
      */
-    public void addMessage(String role, String content) {
+    public void addMessage(ROLE role, String content) {
         if (content == null || content.isBlank()) return;
         if (conversationHistory.isEmpty()) init();
         conversationHistory.add(new ChatMessage(role, content.trim()));
@@ -97,9 +99,9 @@ public class AiContextService {
         // 2. Find the index of the last time the AI answered
         int lastAnswerIndex = -1;
         for (int i = conversationHistory.size() - 1; i > 0; i--) {
-            String role = conversationHistory.get(i).role();
+            ROLE role = conversationHistory.get(i).role();
             // Check for whatever role your AI uses for its own answers
-            if (AI_ANSWER_TAG.equalsIgnoreCase(role)) {
+            if (ASSISTANT.equals(role)) {
                 lastAnswerIndex = i;
                 break;
             }
