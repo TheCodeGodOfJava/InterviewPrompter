@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.Base64;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -92,6 +93,19 @@ public class AiAnswerService {
      */
     private void sendUnlockMessage(String text) {
         messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(text, "READY"));
+    }
+
+    public void processScreenshot(byte[] imageBytes) {
+
+        if (imageBytes == null) {
+            log.error("Screenshot capture returned null. Aborting analysis.");
+            return;
+        }
+
+        String base64Image = "data:image/png;base64," + Base64.getEncoder().encodeToString(imageBytes);
+
+        messagingTemplate.convertAndSend("/topic/screen-analysis", new ChatMessage("user", base64Image));
+        log.info("Screenshot sent to frontend via /topic/screen-analysis");
     }
 
     @PreDestroy

@@ -15,7 +15,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import javax.imageio.ImageIO;
 import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -93,6 +97,8 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
         }
         if (e.getKeyCode() == NativeKeyEvent.VC_F4 && hasCtrl && hasAlt && hasShift) {
             log.info("Macro Detected! 4-th button pressed!");
+            byte [] imageBytes = captureLeftMonitor();
+            CompletableFuture.runAsync(() -> aiAnswerService.processScreenshot(imageBytes));
         }
 
         if (e.getKeyCode() == NativeKeyEvent.VC_F5 && hasCtrl && hasAlt && hasShift) {
@@ -158,5 +164,48 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
         } catch (NativeHookException e) {
             log.error("Failed to unregister native hook", e);
         }
+    }
+
+
+    /**
+     * Determines which monitor is physically on the left and captures only that screen.
+     *
+     * @return PNG image as a byte array, or null if capture fails.
+     */
+    public byte[] captureLeftMonitor() {
+        try {
+            GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+            GraphicsDevice[] screens = ge.getScreenDevices();
+
+            if (screens.length == 0) {
+                log.warn("No screens detected.");
+                return null;
+            }
+
+            // Assume the first screen is the leftmost initially
+            BufferedImage screenCapture = getBufferedImage(screens);
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(screenCapture, "png", baos);
+
+            return baos.toByteArray();
+
+        } catch (Exception e) {
+            log.error("Failed to capture the left monitor.", e);
+            return null;
+        }
+    }
+
+    private BufferedImage getBufferedImage(GraphicsDevice[] screens) {
+        Rectangle leftScreenBounds = screens[0].getDefaultConfiguration().getBounds();
+
+        // Loop through all connected monitors to find the true leftmost screen
+        for (GraphicsDevice screen : screens) {
+            Rectangle bounds = screen.getDefaultConfiguration().getBounds();
+            if (bounds.x < leftScreenBounds.x) {
+                leftScreenBounds = bounds;
+            }
+        }
+        return robot.createScreenCapture(leftScreenBounds);
     }
 }
