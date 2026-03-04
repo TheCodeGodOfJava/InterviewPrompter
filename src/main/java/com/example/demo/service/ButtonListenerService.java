@@ -8,6 +8,7 @@ import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
 import com.github.kwhat.jnativehook.mouse.NativeMouseEvent;
 import com.github.kwhat.jnativehook.mouse.NativeMouseMotionListener;
+import com.github.kwhat.jnativehook.mouse.NativeMouseListener;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,7 @@ import java.util.logging.Logger;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ButtonListenerService implements NativeKeyListener, NativeMouseMotionListener {
+public class ButtonListenerService implements NativeKeyListener, NativeMouseMotionListener, NativeMouseListener {
 
     private final AiAnswerService aiAnswerService;
     private final AiContextService aiContextService;
@@ -152,6 +153,10 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
                     log.info("Macro: Text Analysis");
                     aiAnswerService.generateManualAnswer();
                 }
+                case NativeKeyEvent.VC_F3 -> {
+                    log.info("Macro: Switch Screen Mode");
+                    messagingTemplate.convertAndSend("/topic/screen-mode-toggle", "toggle");
+                }
                 case NativeKeyEvent.VC_F4 -> {
                     log.info("Macro: Screenshot Analysis");
                     byte[] imageBytes = captureLeftMonitor();
@@ -161,6 +166,18 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
                     isScrollModeActive = !isScrollModeActive;
                     log.info("Scroll mode: {}", isScrollModeActive);
                     lastY = -1;
+                }
+                case NativeKeyEvent.VC_F6 -> {
+                    log.info("Macro: Request App Focus");
+                    messagingTemplate.convertAndSend("/topic/request-focus", "focus");
+                }
+                case NativeKeyEvent.VC_F7 -> {
+                    log.info("Macro: Increase Video Opacity");
+                    messagingTemplate.convertAndSend("/topic/video-opacity", "increase");
+                }
+                case NativeKeyEvent.VC_F8 -> {
+                    log.info("Macro: Decrease Video Opacity");
+                    messagingTemplate.convertAndSend("/topic/video-opacity", "decrease");
                 }
             }
         }
