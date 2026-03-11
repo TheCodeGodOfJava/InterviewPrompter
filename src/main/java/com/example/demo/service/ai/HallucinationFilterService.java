@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -27,7 +28,8 @@ public class HallucinationFilterService {
         Path path = Paths.get(filePath);
         if (Files.exists(path)) {
             try {
-                List<String> lines = Files.readAllLines(path);
+                // ИСПРАВЛЕНИЕ 1: Жестко задаем UTF-8 для кириллицы
+                List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
                 for (String line : lines) {
                     if (!line.isBlank()) {
                         hallucinations.add(normalize(line));
@@ -57,6 +59,6 @@ public class HallucinationFilterService {
     }
 
     private String normalize(String text) {
-        return text.replaceAll("[^\\p{L}\\p{N}\\s]", "").trim().toLowerCase();
+        return text.replaceAll("[^\\p{L}\\p{N}]", "").toLowerCase();
     }
 }
