@@ -171,14 +171,6 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
                     log.info("Macro: Request App Focus");
                     messagingTemplate.convertAndSend("/topic/request-focus", "focus");
                 }
-                case NativeKeyEvent.VC_F7 -> {
-                    log.info("Macro: Increase Video Opacity");
-                    messagingTemplate.convertAndSend("/topic/video-opacity", "increase");
-                }
-                case NativeKeyEvent.VC_F8 -> {
-                    log.info("Macro: Decrease Video Opacity");
-                    messagingTemplate.convertAndSend("/topic/video-opacity", "decrease");
-                }
             }
         }
     }
