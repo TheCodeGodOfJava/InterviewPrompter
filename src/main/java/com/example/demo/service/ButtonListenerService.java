@@ -1,5 +1,26 @@
 package com.example.demo.service;
 
+import java.awt.AWTException;
+import java.awt.Dimension;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
+import java.awt.Rectangle;
+import java.awt.Robot;
+import java.awt.Toolkit;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import javax.imageio.ImageIO;
+
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Service;
+
+import com.example.demo.model.AiUpdate;
 import com.example.demo.service.ai.AiAnswerService;
 import com.example.demo.service.ai.AiContextService;
 import com.github.kwhat.jnativehook.GlobalScreen;
@@ -7,30 +28,22 @@ import com.github.kwhat.jnativehook.NativeHookException;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyEvent;
 import com.github.kwhat.jnativehook.keyboard.NativeKeyListener;
 import com.github.kwhat.jnativehook.mouse.NativeMouseEvent;
-import com.github.kwhat.jnativehook.mouse.NativeMouseMotionListener;
 import com.github.kwhat.jnativehook.mouse.NativeMouseListener;
+import com.github.kwhat.jnativehook.mouse.NativeMouseMotionListener;
+
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.stereotype.Service;
-
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ButtonListenerService implements NativeKeyListener, NativeMouseMotionListener, NativeMouseListener {
+
+    public enum TargetMonitor {
+        LEFT, RIGHT
+    }
 
     private final AiAnswerService aiAnswerService;
     private final AiContextService aiContextService;
@@ -59,6 +72,8 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
     private static final int TICK_RATE_MS = 100;
 
     private final ScheduledExecutorService autoScrollExecutor = Executors.newSingleThreadScheduledExecutor();
+
+    private TargetMonitor currentMonitor = TargetMonitor.LEFT;
 
     @PostConstruct
     public void init() {
@@ -90,10 +105,12 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
     }
 
     /**
-     * Background task that checks if the mouse is in a margin and sends scroll events.
+     * Background task that checks if the mouse is in a margin and sends scroll
+     * events.
      */
     private void checkAutoScroll() {
-        if (!isScrollModeActive || currentMouseY == -1) return;
+        if (!isScrollModeActive || currentMouseY == -1)
+            return;
 
         // Auto-scroll UP (Top 100px)
         if (currentMouseY <= MARGIN) {
@@ -109,7 +126,8 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
     public void nativeMouseMoved(NativeMouseEvent e) {
         currentMouseY = e.getY();
 
-        if (!isScrollModeActive) return;
+        if (!isScrollModeActive)
+            return;
 
         if (lastY == -1) {
             lastY = currentMouseY;
@@ -139,9 +157,11 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
     @Override
     public void nativeKeyPressed(NativeKeyEvent e) {
         int modifiers = e.getModifiers();
-        boolean hasCtrl = (modifiers & NativeKeyEvent.CTRL_L_MASK) != 0 || (modifiers & NativeKeyEvent.CTRL_R_MASK) != 0;
+        boolean hasCtrl = (modifiers & NativeKeyEvent.CTRL_L_MASK) != 0
+                || (modifiers & NativeKeyEvent.CTRL_R_MASK) != 0;
         boolean hasAlt = (modifiers & NativeKeyEvent.ALT_L_MASK) != 0 || (modifiers & NativeKeyEvent.ALT_R_MASK) != 0;
-        boolean hasShift = (modifiers & NativeKeyEvent.SHIFT_L_MASK) != 0 || (modifiers & NativeKeyEvent.SHIFT_R_MASK) != 0;
+        boolean hasShift = (modifiers & NativeKeyEvent.SHIFT_L_MASK) != 0
+                || (modifiers & NativeKeyEvent.SHIFT_R_MASK) != 0;
 
         if (hasCtrl && hasAlt && hasShift) {
             switch (e.getKeyCode()) {
@@ -159,8 +179,16 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
                 }
                 case NativeKeyEvent.VC_F4 -> {
                     log.info("Macro: Screenshot Analysis");
-                    byte[] imageBytes = captureLeftMonitor();
-                    CompletableFuture.runAsync(() -> aiAnswerService.processScreenshot(imageBytes));
+                    byte[] imageBytes = captureTargetMonitor();
+
+                    if (imageBytes == null) {
+                        log.error("Screenshot capture failed (returned null). Aborting.");
+                        // Optional: tell frontend to stop spinning if it started
+                        messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate("Capture failed", "READY"));
+                        return;
+                    }
+
+                    aiAnswerService.processScreenshot(imageBytes);
                 }
                 case NativeKeyEvent.VC_F5 -> {
                     isScrollModeActive = !isScrollModeActive;
@@ -185,21 +213,48 @@ public class ButtonListenerService implements NativeKeyListener, NativeMouseMoti
         }
     }
 
-    public byte[] captureLeftMonitor() {
+    public void setTargetMonitor(TargetMonitor target) {
+        this.currentMonitor = target;
+        log.info("Switched capture target to: {}", target);
+    }
+
+    public TargetMonitor getTargetMonitor() {
+        return this.currentMonitor;
+    }
+
+    public byte[] captureTargetMonitor() {
         try {
             GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
             GraphicsDevice[] screens = ge.getScreenDevices();
-            if (screens.length == 0) return null;
+            if (screens.length == 0)
+                return null;
 
-            Rectangle leftScreenBounds = screens[0].getDefaultConfiguration().getBounds();
-            for (GraphicsDevice screen : screens) {
-                Rectangle bounds = screen.getDefaultConfiguration().getBounds();
-                if (bounds.x < leftScreenBounds.x) leftScreenBounds = bounds;
+            // Default to the first screen
+            Rectangle targetBounds = screens[0].getDefaultConfiguration().getBounds();
+
+            // If multiple screens, find the leftmost and rightmost based on X coordinates
+            if (screens.length > 1) {
+                GraphicsDevice leftScreen = screens[0];
+                GraphicsDevice rightScreen = screens[0];
+
+                for (GraphicsDevice screen : screens) {
+                    int x = screen.getDefaultConfiguration().getBounds().x;
+                    if (x < leftScreen.getDefaultConfiguration().getBounds().x)
+                        leftScreen = screen;
+                    if (x > rightScreen.getDefaultConfiguration().getBounds().x)
+                        rightScreen = screen;
+                }
+
+                if (currentMonitor == TargetMonitor.LEFT) {
+                    targetBounds = leftScreen.getDefaultConfiguration().getBounds();
+                } else {
+                    targetBounds = rightScreen.getDefaultConfiguration().getBounds();
+                }
             }
 
-            BufferedImage screenCapture = robot.createScreenCapture(leftScreenBounds);
+            BufferedImage screenCapture = robot.createScreenCapture(targetBounds);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            ImageIO.write(screenCapture, "png", baos);
+            ImageIO.write(screenCapture, "jpg", baos);
             return baos.toByteArray();
         } catch (Exception e) {
             log.error("Capture failed", e);

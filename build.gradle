@@ -22,7 +22,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
-    implementation 'org.springframework.ai:spring-ai-starter-model-google-genai:1.1.2'
+    implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
     implementation 'com.github.kwhat:jnativehook:2.2.2'
 
     compileOnly 'org.projectlombok:lombok:1.18.30'
@@ -34,7 +34,7 @@ dependencies {
 
 dependencyManagement {
     imports {
-        mavenBom "org.springframework.ai:spring-ai-bom:1.0.0-M6"
+        mavenBom "org.springframework.ai:spring-ai-bom:1.1.2"
     }
 }
 

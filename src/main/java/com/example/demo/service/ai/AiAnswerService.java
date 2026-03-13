@@ -21,8 +21,10 @@ import org.springframework.util.MimeTypeUtils;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -86,9 +88,10 @@ public class AiAnswerService {
     public void processScreenshot(byte[] imageBytes) {
         aiExecutor.submit(() -> {
             try {
-                if (imageBytes == null) return;
+                if (imageBytes == null)
+                    return;
 
-                String base64Image = "data:image/png;base64," + Base64.getEncoder().encodeToString(imageBytes);
+                String base64Image = "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(imageBytes);
                 messagingTemplate.convertAndSend("/topic/screen-analysis", new ChatMessage(ROLE.USER, base64Image));
 
                 List<org.springframework.ai.chat.messages.Message> springAiMessages = new ArrayList<>();
@@ -100,25 +103,39 @@ public class AiAnswerService {
                     }
                 }
 
-                Media media = new Media(MimeTypeUtils.IMAGE_PNG, new ByteArrayResource(imageBytes));
+                Media media = new Media(MimeTypeUtils.IMAGE_JPEG, new ByteArrayResource(imageBytes));
 
                 UserMessage multimodalMessage = UserMessage.builder()
                         .text("Аналізуй цей скріншот. Орієнтуйся на контекст нашої розмови.")
                         .media(media)
                         .build();
                 springAiMessages.add(multimodalMessage);
+
+                // Starts "Thinking..."
                 messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate("", "THINKING"));
+                log.info("Sending request to Gemini API...");
+                log.info("Payload size: {} bytes ({} MB)", imageBytes.length, imageBytes.length / (1024 * 1024));
                 long startTime = System.currentTimeMillis();
-                ChatResponse response = chatModel.call(new Prompt(springAiMessages));
+
+                ChatResponse response = CompletableFuture
+                        .supplyAsync(() -> chatModel.call(new Prompt(springAiMessages)))
+                        .get(30, TimeUnit.SECONDS);
+
                 long duration = System.currentTimeMillis() - startTime;
                 log.info("The screenshot analysis completed in {}ms", duration);
+
                 String answer = response.getResult().getOutput().getText();
                 messagingTemplate.convertAndSend("/topic/screen-analysis", new ChatMessage(ROLE.ASSISTANT, answer));
+
+                // Unlocks UI on success
                 sendUnlockMessage(answer);
 
             } catch (Exception e) {
                 log.error("Gemini screenshot analysis failed", e);
-                messagingTemplate.convertAndSend("/topic/screen-analysis", new ChatMessage(ROLE.ASSISTANT, "⚠️ Error analysing image!"));
+                messagingTemplate.convertAndSend("/topic/screen-analysis",
+                        new ChatMessage(ROLE.ASSISTANT, "⚠️ Error analysing image!"));
+
+                sendUnlockMessage("⚠️ Error analysing image: " + e.getMessage());
             }
         });
     }
