@@ -59,9 +59,6 @@ public class AiContextService {
         }
     }
 
-    /**
-     * Adds a message and broadcasts the update to the UI.
-     */
     public void addMessage(ROLE role, String content) {
         if (content == null || content.isBlank()) return;
         if (conversationHistory.isEmpty()) init();
@@ -69,10 +66,7 @@ public class AiContextService {
         trimHistory();
         broadcastUpdate();
     }
-
-    /**
-     * Returns a COPY of the history for the AI Provider to use.
-     */
+    
     public List<ChatMessage> getHistory() {
         if (conversationHistory.isEmpty()) init();
         return List.copyOf(conversationHistory);
@@ -84,44 +78,65 @@ public class AiContextService {
         }
     }
 
-    /**
-     * Removes all question+answer pairs, keeping only the System prompt
-     * and any pending unanswered user questions at the end of the history.
-     */
     public void clearAnsweredQuestions() {
-        if (conversationHistory.size() <= 1) return; // Nothing to clear if it's just the system prompt
+        if (conversationHistory.size() <= 1) return;
 
-        List<ChatMessage> retainedMessages = new ArrayList<>();
-
-        // 1. Always keep the System Prompt (index 0)
-        retainedMessages.add(conversationHistory.getFirst());
-
-        // 2. Find the index of the last time the AI answered
         int lastAnswerIndex = -1;
         for (int i = conversationHistory.size() - 1; i > 0; i--) {
-            ROLE role = conversationHistory.get(i).role();
-            // Check for whatever role your AI uses for its own answers
-            if (ASSISTANT.equals(role)) {
+            if (ROLE.ASSISTANT.equals(conversationHistory.get(i).role())) {
                 lastAnswerIndex = i;
                 break;
             }
         }
 
-        // 3. If we found an answer, everything after it is an "unanswered" question
         if (lastAnswerIndex != -1) {
-            for (int i = lastAnswerIndex + 1; i < conversationHistory.size(); i++) {
-                retainedMessages.add(conversationHistory.get(i));
-            }
-
-            // 4. Safely update the thread-safe list and broadcast
-            conversationHistory.clear();
-            conversationHistory.addAll(retainedMessages);
-            broadcastUpdate();
-            log.info("Context cleared. Retained system prompt and {} unanswered messages.",
-                    retainedMessages.size() - 1);
+            retainMessagesAfterIndex(lastAnswerIndex);
+            log.info("Context cleared. Retained system prompt and unanswered messages.");
         } else {
             log.info("No answered questions found to clear. Context remains unchanged.");
         }
+    }
+
+    public void deleteUpToMessage(String messageId) {
+        int targetIndex = -1;
+        for (int i = 0; i < conversationHistory.size(); i++) {
+            if (conversationHistory.get(i).id().equals(messageId)) {
+                targetIndex = i;
+                break;
+            }
+        }
+
+        if (targetIndex > 0) {
+            retainMessagesAfterIndex(targetIndex);
+            
+            log.info("=== REMAINING CONTEXT ({} messages) ===", conversationHistory.size());
+            for (int i = 0; i < conversationHistory.size(); i++) {
+                ChatMessage msg = conversationHistory.get(i);
+                
+                String preview = msg.content().replace("\n", " ");
+                
+                if (preview.length() > 80) {
+                    preview = preview.substring(0, 80) + "...";
+                }
+                
+                log.info("[Index {}] {} : {}", i, msg.role(), preview);
+            }
+            log.info("=========================================");
+        }
+    }
+    
+    private void retainMessagesAfterIndex(int targetIndex) {
+        List<ChatMessage> retainedMessages = new ArrayList<>();
+        
+        retainedMessages.add(conversationHistory.get(0));
+        
+        if (targetIndex + 1 < conversationHistory.size()) {
+            retainedMessages.addAll(conversationHistory.subList(targetIndex + 1, conversationHistory.size()));
+        }
+
+        conversationHistory.clear();
+        conversationHistory.addAll(retainedMessages);
+        broadcastUpdate();
     }
 
     private void broadcastUpdate() {
