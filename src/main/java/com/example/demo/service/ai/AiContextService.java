@@ -47,11 +47,10 @@ public class AiContextService {
             4. All SQL concepts (e.g., Table-Valued Functions, TRY/CATCH, JOINs), Java/Spring components (e.g., Beans, SecurityFilterChain, @Bean), Angular directives, and architectural patterns MUST remain in pure, untranslated English.
             5. Do not attempt to transliterate English terms into Cyrillic (e.g., write "ThreadLocal", never "ТредЛокал").
             6. Do not map technical terms to Asian characters under any circumstances (e.g., never use "表" for Table).
-            
+
             EXAMPLE OF CORRECT BEHAVIOR:
             "У T-SQL функція не може мати TRY/CATCH з THROW, тому краще використовувати Table-Valued Function плюс процедуру-обгортку."
               \s""";
-
 
     public void init() {
         if (conversationHistory.isEmpty()) {
@@ -60,15 +59,18 @@ public class AiContextService {
     }
 
     public void addMessage(ROLE role, String content) {
-        if (content == null || content.isBlank()) return;
-        if (conversationHistory.isEmpty()) init();
+        if (content == null || content.isBlank())
+            return;
+        if (conversationHistory.isEmpty())
+            init();
         conversationHistory.add(new ChatMessage(role, content.trim()));
         trimHistory();
         broadcastUpdate();
     }
-    
+
     public List<ChatMessage> getHistory() {
-        if (conversationHistory.isEmpty()) init();
+        if (conversationHistory.isEmpty())
+            init();
         return List.copyOf(conversationHistory);
     }
 
@@ -79,7 +81,8 @@ public class AiContextService {
     }
 
     public void clearAnsweredQuestions() {
-        if (conversationHistory.size() <= 1) return;
+        if (conversationHistory.size() <= 1)
+            return;
 
         int lastAnswerIndex = -1;
         for (int i = conversationHistory.size() - 1; i > 0; i--) {
@@ -108,28 +111,16 @@ public class AiContextService {
 
         if (targetIndex > 0) {
             retainMessagesAfterIndex(targetIndex);
-            
-            log.info("=== REMAINING CONTEXT ({} messages) ===", conversationHistory.size());
-            for (int i = 0; i < conversationHistory.size(); i++) {
-                ChatMessage msg = conversationHistory.get(i);
-                
-                String preview = msg.content().replace("\n", " ");
-                
-                if (preview.length() > 80) {
-                    preview = preview.substring(0, 80) + "...";
-                }
-                
-                log.info("[Index {}] {} : {}", i, msg.role(), preview);
-            }
-            log.info("=========================================");
+            log.info("Deleted history up to message ID: {}", messageId);           
+            logRemainingHistory();
         }
     }
-    
+
     private void retainMessagesAfterIndex(int targetIndex) {
         List<ChatMessage> retainedMessages = new ArrayList<>();
-        
+
         retainedMessages.add(conversationHistory.get(0));
-        
+
         if (targetIndex + 1 < conversationHistory.size()) {
             retainedMessages.addAll(conversationHistory.subList(targetIndex + 1, conversationHistory.size()));
         }
@@ -137,6 +128,33 @@ public class AiContextService {
         conversationHistory.clear();
         conversationHistory.addAll(retainedMessages);
         broadcastUpdate();
+    }
+
+    public void deleteSingleMessage(String messageId) {
+        boolean removed = conversationHistory
+                .removeIf(msg -> !ROLE.SYSTEM.equals(msg.role()) && msg.id().equals(messageId));
+
+        if (removed) {
+            log.info("Deleted single message: {}", messageId);
+            logRemainingHistory();
+            broadcastUpdate();
+        }
+    }
+
+    private void logRemainingHistory() {
+        log.info("=== CURRENT CONTEXT ({} messages) ===", conversationHistory.size());
+        for (int i = 0; i < conversationHistory.size(); i++) {
+            ChatMessage m = conversationHistory.get(i);
+            
+            String preview = m.content().replace("\n", " ");
+            
+            if (preview.length() > 80) {
+                preview = preview.substring(0, 80) + "...";
+            }
+            
+            log.info("[{}] {} : {}", i, m.role(), preview);
+        }
+        log.info("=======================================");
     }
 
     private void broadcastUpdate() {

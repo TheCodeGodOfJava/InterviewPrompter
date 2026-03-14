@@ -38,4 +38,10 @@ public class ChatController {
         aiContextService.deleteUpToMessage(id);
         return ResponseEntity.ok().build();
     }
+
+    @DeleteMapping("/history/single/{id}")
+    public ResponseEntity<Void> deleteSingleMessage(@PathVariable String id) {
+        aiContextService.deleteSingleMessage(id);
+        return ResponseEntity.ok().build();
+    }
 }
