@@ -71,15 +71,15 @@ public class SpeechRecognitionService {
 
         log.info("Switching audio source from {} to {}", this.source, newSource);
 
-        // 1. Gracefully stop current capture
-        this.shutdownSource();
+        boolean shouldRestart = this.isRunning;
 
-        // 2. Update source **before** starting new one (so getCurrentSource() is
-        // correct even if start fails)
+        this.shutdownSource();
         this.source = newSource;
 
-        // 3. Start new recognition with the updated source
-        startRecognition();
+        if (shouldRestart) {
+            log.info("Restarting speech recognition with the new source.");
+            startRecognition();
+        }
     }
 
     public void startRecognition() throws Exception {
@@ -164,7 +164,7 @@ public class SpeechRecognitionService {
         }
     }
 
-    private void shutdownSource() {
+    public void shutdownSource() {
         log.info("Initiating speech recognition shutdown...");
         isRunning = false;
         List<Throwable> problems = new ArrayList<>();
@@ -240,7 +240,7 @@ public class SpeechRecognitionService {
     }
 
     @PreDestroy
-    public void shutdown() {
+    private void shutdown() {
         this.shutdownSource();
         this.setEngine(null);
     }

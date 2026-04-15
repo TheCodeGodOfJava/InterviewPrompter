@@ -53,20 +53,20 @@ public class AudioSourceController {
         return ResponseEntity.ok(recognitionService.getSource().name());
     }
 
-  @PostMapping("/toggle-recognition")
-public ResponseEntity<Boolean> toggleRecognition(@RequestParam boolean enabled) {
-    try {
-        if (enabled) {
-            recognitionService.startRecognition();
-        } else {
-            recognitionService.stopRecognition();
+    @PostMapping("/toggle-recognition")
+    public ResponseEntity<Boolean> toggleRecognition(@RequestParam boolean enabled) {
+        try {
+            if (enabled) {
+                recognitionService.startRecognition();
+            } else {
+                recognitionService.shutdownSource();
+            }
+            return ResponseEntity.ok(recognitionService.isRunning());
+        } catch (Exception e) {
+            log.error("Failed to toggle recognition", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-        return ResponseEntity.ok(recognitionService.isRunning());
-    } catch (Exception e) {
-        log.error("Failed to toggle recognition", e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
     }
-}
 
     @GetMapping("/recognition-status")
     public ResponseEntity<Boolean> getRecognitionStatus() {
