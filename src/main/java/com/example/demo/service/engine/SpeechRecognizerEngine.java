@@ -12,5 +12,7 @@ public interface SpeechRecognizerEngine {
         System.out.println("Setting silence threshold to " + threshold);
     }
 
+    void setLanguage(String langCode);
+
     void close();
 }

@@ -1,11 +1,5 @@
 package com.example.demo.service.engine.external;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
-
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -13,10 +7,20 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import lombok.extern.slf4j.Slf4j;
+
 @Slf4j
 @Service
 @ConditionalOnProperty(name = "speech.engine", havingValue = "groq")
 public class GroqSstEngine extends AbstractSpeechEngine {
+
+    private String langCode = "uk";
 
     private final HttpClient client;
     private final ObjectMapper mapper;
@@ -38,7 +42,7 @@ public class GroqSstEngine extends AbstractSpeechEngine {
 
     private CompletableFuture<String> sendAudioToCloud(byte[] wavData) {
         String boundary = "Boundary-" + UUID.randomUUID();
-        Map<String, String> params = Map.of("model", "whisper-large-v3-turbo", "language", "uk");
+        Map<String, String> params = Map.of("model", "whisper-large-v3-turbo", "language", this.langCode);
         byte[] body = buildMultipartBody(wavData, boundary, params);
         HttpRequest request = newRequest(STT_URL)
                 .header("Authorization", "Bearer " + apiKey)
@@ -58,5 +62,11 @@ public class GroqSstEngine extends AbstractSpeechEngine {
                 return null;
             }
         });
+    }
+
+    @Override
+    public void setLanguage(String langCode) {
+        this.langCode = langCode;
+        log.info("Whisper engine language set to: {}", langCode);
     }
 }

@@ -164,6 +164,11 @@ public class SpeechRecognitionService {
         }
     }
 
+    public void updateEngineLanguage(String langCode) {
+        log.info("Requesting engine language change to: {}", langCode);
+        currentEngine.setLanguage(langCode);
+    }
+
     public void shutdownSource() {
         log.info("Initiating speech recognition shutdown...");
         isRunning = false;

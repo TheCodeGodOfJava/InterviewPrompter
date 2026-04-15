@@ -20,6 +20,56 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class AiContextService {
 
+    public enum InterviewLanguage {
+        BILINGUAL(
+                """
+                           Ти - Senior Java та Angular Tech Lead. Твоя мета - допомогти кандидату пройти технічну співбесіду на такий же рівень.
+                           Давай глибокі, професійні відповіді по
+                           Java, Spring Boot, Hibernate, Object Oriented Programming, Angular, JavaScript та інші.
+
+                           Обов'язково згадуй нюанси (наприклад: Cloneable - це broken interface, краще copy constructor).
+                           Відповідай українською мовою. Будь технічно точним.
+                           CRITICAL LANGUAGE AND TERMINOLOGY RULES:
+                        1. The user will communicate with you in Ukrainian.
+                        2. You must respond with natural, professional Ukrainian for all general explanations and conversational text.
+                        3. ABSOLUTE PROHIBITION: You must NEVER translate technical terminology, programming concepts, or framework features out of English.
+                        4. All SQL concepts (e.g., Table-Valued Functions, TRY/CATCH, JOINs), Java/Spring components (e.g., Beans, SecurityFilterChain, @Bean), Angular directives, and architectural patterns MUST remain in pure, untranslated English.
+                        5. Do not attempt to transliterate English terms into Cyrillic (e.g., write "ThreadLocal", never "ТредЛокал").
+                        6. Do not map technical terms to Asian characters under any circumstances (e.g., never use "表" for Table).
+
+                        EXAMPLE OF CORRECT BEHAVIOR:
+                        "У T-SQL функція не може мати TRY/CATCH з THROW, тому краще використовувати Table-Valued Function плюс процедуру-обгортку."
+                          """,
+                "uk"),
+
+        ENGLISH("""
+                You are a Senior Java and Angular Tech Lead. Your goal is to help a candidate pass a technical interview for the same level.
+                The interview is strictly in English. Provide deep, professional answers.
+                Focus on Java, Spring Boot, Hibernate, OOP, Angular, and System Design.
+                Mention nuances (e.g., why record is better than a class for DTO).
+                Stay technically precise and professional.
+                """,
+                "en");
+
+        private final String prompt;
+        private final String sttCode;
+
+        InterviewLanguage(String prompt, String sttCode) {
+            this.prompt = prompt;
+            this.sttCode = sttCode;
+        }
+
+        public String getPrompt() {
+            return prompt;
+        }
+
+        public String getSttCode() {
+            return sttCode;
+        }
+    }
+
+    private InterviewLanguage currentLanguage = InterviewLanguage.BILINGUAL;
+
     private final SimpMessagingTemplate messagingTemplate;
 
     // Thread-safe storage for the conversation
@@ -28,29 +78,23 @@ public class AiContextService {
     // Maximum number of messages to keep (System + 10 pairs of Q&A)
     private static final int MAX_HISTORY_SIZE = 21;
 
-    // The Persona
-    private static final String SYSTEM_PROMPT = """
-               Ти - Senior Java та Angular Tech Lead. Твоя мета - допомогти кандидату пройти технічну співбесіду на такий же рівень.
-               Давай глибокі, професійні відповіді по
-               Java, Spring Boot, Hibernate, Object Oriented Programming, Angular, JavaScript та інші.
+    public InterviewLanguage getCurrentLanguage() {
+        return currentLanguage;
+    }
 
-               Обов'язково згадуй нюанси (наприклад: Cloneable - це broken interface, краще copy constructor).
-               Відповідай українською мовою. Будь технічно точним.
-               CRITICAL LANGUAGE AND TERMINOLOGY RULES:
-            1. The user will communicate with you in Ukrainian.
-            2. You must respond with natural, professional Ukrainian for all general explanations and conversational text.
-            3. ABSOLUTE PROHIBITION: You must NEVER translate technical terminology, programming concepts, or framework features out of English.
-            4. All SQL concepts (e.g., Table-Valued Functions, TRY/CATCH, JOINs), Java/Spring components (e.g., Beans, SecurityFilterChain, @Bean), Angular directives, and architectural patterns MUST remain in pure, untranslated English.
-            5. Do not attempt to transliterate English terms into Cyrillic (e.g., write "ThreadLocal", never "ТредЛокал").
-            6. Do not map technical terms to Asian characters under any circumstances (e.g., never use "表" for Table).
-
-            EXAMPLE OF CORRECT BEHAVIOR:
-            "У T-SQL функція не може мати TRY/CATCH з THROW, тому краще використовувати Table-Valued Function плюс процедуру-обгортку."
-              """;
+    public void updateSystemPrompt(InterviewLanguage lang) {
+    this.currentLanguage = lang;
+    
+    if (!conversationHistory.isEmpty()) {
+        conversationHistory.set(0, new ChatMessage(ROLE.SYSTEM, lang.getPrompt()));
+        log.info("System Prompt updated to: {}", lang.name());
+        broadcastUpdate();
+    }
+}
 
     public void init() {
         if (conversationHistory.isEmpty()) {
-            conversationHistory.add(new ChatMessage(SYSTEM, SYSTEM_PROMPT));
+            conversationHistory.add(new ChatMessage(SYSTEM, this.currentLanguage.getPrompt()));
         }
     }
 
@@ -155,7 +199,7 @@ public class AiContextService {
 
     public void clearAllHistory() {
         conversationHistory.clear();
-        init(); 
+        init();
         broadcastUpdate();
         log.info("Total history wipe completed.");
     }
