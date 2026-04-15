@@ -140,6 +140,13 @@ public class AiAnswerService {
         });
     }
 
+    public void resetState() {
+        lastAnswer.set("");
+        lastProcessedUserInput.set("");
+        messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate("", "READY"));
+        log.info("AI Service state reset.");
+    }
+
     private void sendUnlockMessage(String text) {
         messagingTemplate.convertAndSend("/topic/ai-response", new AiUpdate(text, "READY"));
     }

@@ -1,8 +1,6 @@
 package com.example.demo.controller;
 
-import com.example.demo.model.ChatMessage;
-import com.example.demo.service.ai.AiContextService;
-import lombok.RequiredArgsConstructor;
+import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
@@ -12,7 +10,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
+import com.example.demo.model.ChatMessage;
+import com.example.demo.service.ai.AiAnswerService;
+import com.example.demo.service.ai.AiContextService;
+
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -20,14 +22,13 @@ import java.util.List;
 public class ChatController {
 
     private final AiContextService aiContextService;
+    private final AiAnswerService aiAnswerService;
 
-    // HTTP GET: Initial load of history
     @GetMapping("/history")
     public List<ChatMessage> getChatHistory() {
         return aiContextService.getHistory();
     }
 
-    // WebSocket Subscribe: Send history immediately on connection
     @SubscribeMapping("/context")
     public List<ChatMessage> onSubscribe() {
         return aiContextService.getHistory();
@@ -42,6 +43,13 @@ public class ChatController {
     @DeleteMapping("/history/single/{id}")
     public ResponseEntity<Void> deleteSingleMessage(@PathVariable String id) {
         aiContextService.deleteSingleMessage(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/history/all")
+    public ResponseEntity<Void> clearAll() {
+        aiContextService.clearAllHistory();
+        aiAnswerService.resetState();
         return ResponseEntity.ok().build();
     }
 }
