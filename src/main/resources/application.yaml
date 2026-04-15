@@ -1,6 +1,6 @@
 speech:
   engine: "groq"
-  source: "MICROPHONE" # Options: MICROPHONE, STEREO_MIX
+  source: "STEREO_MIX" # Options: MICROPHONE, STEREO_MIX
 ai:
   provider: "groq"
 spring:

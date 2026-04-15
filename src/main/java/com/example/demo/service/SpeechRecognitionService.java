@@ -1,29 +1,31 @@
 package com.example.demo.service;
 
-import com.example.demo.model.SOURCE;
-import com.example.demo.service.ai.AiContextService;
-import com.example.demo.service.ai.HallucinationFilterService;
-import com.example.demo.service.engine.SpeechRecognizerEngine;
-import jakarta.annotation.PreDestroy;
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
+import static com.example.demo.model.ROLE.USER;
+import static com.example.demo.service.engine.SpeechRecognizerEngine.SAMPLE_RATE;
 
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static com.example.demo.model.ROLE.USER;
-import static com.example.demo.service.engine.SpeechRecognizerEngine.SAMPLE_RATE;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import com.example.demo.model.SOURCE;
+import com.example.demo.service.ai.AiContextService;
+import com.example.demo.service.ai.HallucinationFilterService;
+import com.example.demo.service.engine.SpeechRecognizerEngine;
+
+import jakarta.annotation.PreDestroy;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
-public class SpeechRecognitionService implements SmartInitializingSingleton {
+public class SpeechRecognitionService {
 
     private volatile SpeechRecognizerEngine currentEngine;
+    @Getter
     private boolean isRunning = false;
 
     @Getter
@@ -35,7 +37,9 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
     private Thread recognitionThread;
 
     // Constructor remains the same (loads model)
-    public SpeechRecognitionService(AiContextService aiContextService, HallucinationFilterService hallucinationFilterService, SpeechRecognizerEngine currentEngine, @Value("${speech.source:MICROPHONE}") String defaultSource) {
+    public SpeechRecognitionService(AiContextService aiContextService,
+            HallucinationFilterService hallucinationFilterService, SpeechRecognizerEngine currentEngine,
+            @Value("${speech.source:MICROPHONE}") String defaultSource) {
         this.hallucinationFilterService = hallucinationFilterService;
         this.aiContextService = aiContextService;
         this.currentEngine = currentEngine;
@@ -50,7 +54,8 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
     }
 
     public void setEngine(SpeechRecognizerEngine engine) {
-        if (this.currentEngine != null) this.currentEngine.close();
+        if (this.currentEngine != null)
+            this.currentEngine.close();
         this.currentEngine = engine;
     }
 
@@ -69,7 +74,8 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         // 1. Gracefully stop current capture
         this.shutdownSource();
 
-        // 2. Update source **before** starting new one (so getCurrentSource() is correct even if start fails)
+        // 2. Update source **before** starting new one (so getCurrentSource() is
+        // correct even if start fails)
         this.source = newSource;
 
         // 3. Start new recognition with the updated source
@@ -97,7 +103,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         InputStream audioStream = ffmpegProcess.getInputStream();
 
         recognitionThread = new Thread(() -> runRecognition(audioStream), "Recognition-" + source.name());
-        recognitionThread.setDaemon(true);  // ← Good: JVM won't wait for daemon thread on exit
+        recognitionThread.setDaemon(true); // ← Good: JVM won't wait for daemon thread on exit
         recognitionThread.start();
 
         isRunning = true;
@@ -123,7 +129,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         command.add("1");
 
         command.add("-f");
-        command.add("s16le");                     // Raw PCM 16-bit
+        command.add("s16le"); // Raw PCM 16-bit
         command.add("pipe:1");
 
         return new ProcessBuilder(command);
@@ -135,7 +141,7 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         // 1. Define what happens when text is recognized (The Callback)
         Consumer<String> onTextRecognized = (text) -> {
             if (text != null && !text.isBlank()) {
-                //Check hallucination
+                // Check hallucination
                 if (!hallucinationFilterService.isValidTranscript(text)) {
                     log.info("Ignored hallucination: {}", text);
                     return;
@@ -165,7 +171,8 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
 
         // -------------------------------------------------
         // STEP 1: Cut the data source (ffmpeg)
-        // This forces the InputStream.read() in the thread to unblock (return -1 or throw IOException)
+        // This forces the InputStream.read() in the thread to unblock (return -1 or
+        // throw IOException)
         // -------------------------------------------------
         if (ffmpegProcess != null) {
             try {
@@ -204,7 +211,8 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
 
         // -------------------------------------------------
         // STEP 3: Stop the Java Thread
-        // Now that the stream is broken, the thread should be exiting its loop naturally.
+        // Now that the stream is broken, the thread should be exiting its loop
+        // naturally.
         // -------------------------------------------------
         if (recognitionThread != null && recognitionThread.isAlive()) {
             recognitionThread.interrupt(); // Set flag just in case
@@ -231,19 +239,18 @@ public class SpeechRecognitionService implements SmartInitializingSingleton {
         }
     }
 
-
     @PreDestroy
     public void shutdown() {
         this.shutdownSource();
         this.setEngine(null);
     }
 
-    @Override
-    public void afterSingletonsInstantiated() {
-        try {
-            startRecognition();
-        } catch (Exception e) {
-            log.info("Unable to start speech recognition", e);
+    public synchronized void stopRecognition() {
+        if (!isRunning) {
+            log.info("Speech recognition is already stopped.");
+            return;
         }
+        this.shutdown();
     }
+
 }
